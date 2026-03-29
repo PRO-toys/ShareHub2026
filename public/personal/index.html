@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PhotoQRbag — My Photos</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Inter','Segoe UI',sans-serif; background:#f5f5f5; min-height:100vh; }
+
+  .header { background:linear-gradient(135deg,#1a1a2e,#16213e); color:white; padding:24px 16px; text-align:center; }
+  .profile { display:flex; align-items:center; gap:14px; max-width:500px; margin:0 auto; }
+  .avatar { width:64px; height:64px; border-radius:50%; object-fit:cover; border:2px solid #C9A24A; background:#333; }
+  .avatar-placeholder { width:64px; height:64px; border-radius:50%; background:#333; display:flex; align-items:center; justify-content:center; font-size:28px; color:#C9A24A; border:2px solid #C9A24A; }
+  .profile-info { text-align:left; }
+  .profile-info h2 { font-size:18px; font-weight:700; }
+  .profile-info p { font-size:12px; color:#C9A24A; }
+
+  .container { max-width:500px; margin:0 auto; padding:16px; }
+
+  .card { background:white; border-radius:12px; padding:20px; margin-bottom:12px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+  .card h3 { font-size:15px; color:#1a1a2e; margin-bottom:12px; display:flex; align-items:center; gap:6px; }
+
+  .photo-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .photo-card { background:#f8f8f8; border-radius:10px; overflow:hidden; cursor:pointer; }
+  .photo-card img { width:100%; aspect-ratio:3/2; object-fit:cover; }
+  .photo-card .info { padding:8px 10px; }
+  .photo-card .info p { font-size:11px; color:#888; }
+
+  .photo-actions { display:flex; gap:6px; margin-top:6px; }
+  .photo-actions a, .photo-actions button { flex:1; padding:6px; border:none; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer; text-align:center; text-decoration:none; }
+  .act-dl { background:#C9A24A; color:white; }
+  .act-share { background:#06C755; color:white; }
+  .act-fb { background:#1877F2; color:white; }
+
+  .empty { text-align:center; padding:40px 20px; color:#999; }
+  .empty p { font-size:14px; margin-bottom:8px; }
+
+  .lucky-draw { text-align:center; padding:16px; border:2px dashed #C9A24A; border-radius:10px; }
+  .lucky-draw.won { border-style:solid; background:#FFFDE7; }
+  .lucky-draw h4 { color:#C9A24A; font-size:16px; }
+  .lucky-draw .prize { font-size:24px; font-weight:800; color:#1a1a2e; margin:8px 0; }
+
+  .refresh-notice { text-align:center; font-size:11px; color:#ccc; margin-top:8px; }
+
+  .btn { width:100%; padding:12px; border:none; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer; margin-bottom:8px; }
+  .btn-gold { background:#C9A24A; color:white; }
+  .btn-outline { background:white; border:1.5px solid #e0e0e0; color:#333; }
+
+  .lightbox { position:fixed; inset:0; background:rgba(0,0,0,0.9); display:none; z-index:100; justify-content:center; align-items:center; }
+  .lightbox.show { display:flex; }
+  .lightbox img, .lightbox video { max-width:95vw; max-height:90vh; object-fit:contain; border-radius:8px; }
+  .lightbox-close { position:absolute; top:16px; right:16px; background:rgba(255,255,255,0.2); color:white; border:none; width:40px; height:40px; border-radius:50%; font-size:20px; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="profile">
+    <div class="avatar-placeholder" id="avatar">?</div>
+    <div class="profile-info">
+      <h2 id="userName">Loading...</h2>
+      <p id="userMeta"></p>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <!-- Lucky Draw -->
+  <div class="card" id="luckyCard" style="display:none;">
+    <div class="lucky-draw" id="luckyDraw"></div>
+  </div>
+
+  <!-- Photos -->
+  <div class="card">
+    <h3>My Photos</h3>
+    <div id="photoGrid" class="photo-grid">
+      <div class="empty"><p>No photos yet</p><p style="font-size:12px;">Photos will appear here after your booth session</p></div>
+    </div>
+  </div>
+
+  <!-- Add Photo (manual) -->
+  <div class="card">
+    <h3>Add Photo</h3>
+    <p style="font-size:12px; color:#888; margin-bottom:10px;">Enter QR token from booth screen to add a photo manually</p>
+    <div style="display:flex; gap:8px;">
+      <input type="text" id="addQrToken" placeholder="QR Token" style="flex:1; padding:10px; border:1.5px solid #e0e0e0; border-radius:8px; font-size:14px;">
+      <button class="btn-gold" style="padding:10px 20px; border:none; border-radius:8px; font-weight:600; cursor:pointer; color:white; background:#C9A24A;" onclick="addPhoto()">Add</button>
+    </div>
+  </div>
+
+  <div class="refresh-notice">Auto-refreshes every 30 seconds</div>
+</div>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <button class="lightbox-close" onclick="closeLightbox()">X</button>
+  <img id="lbImg" src="" style="display:none;">
+  <video id="lbVideo" src="" controls style="display:none;"></video>
+</div>
+
+<script>
+const API = '';
+const params = new URLSearchParams(location.search);
+const token = params.get('token') || '';
+let pageData = null;
+
+if (!token) {
+  document.getElementById('userName').textContent = 'No token provided';
+} else {
+  loadData();
+  setInterval(loadData, 30000);
+}
+
+async function loadData() {
+  try {
+    const res = await fetch(API + '/api/badge/personal/' + token);
+    const data = await res.json();
+    if (!data.success) return;
+    pageData = data.data;
+    render();
+  } catch {}
+}
+
+function render() {
+  const { user, sessions, luckyDraw } = pageData;
+
+  // Profile
+  document.getElementById('userName').textContent = user.name || 'Guest';
+  document.getElementById('userMeta').textContent = `${user.method} | ${sessions.length} photos`;
+
+  if (user.picture) {
+    const img = document.createElement('img');
+    img.src = user.picture;
+    img.className = 'avatar';
+    img.onerror = () => {};
+    const placeholder = document.getElementById('avatar');
+    placeholder.parentNode.replaceChild(img, placeholder);
+  }
+
+  // Lucky Draw
+  if (luckyDraw.won) {
+    document.getElementById('luckyCard').style.display = 'block';
+    document.getElementById('luckyDraw').className = 'lucky-draw won';
+    document.getElementById('luckyDraw').innerHTML = `
+      <h4>Congratulations!</h4>
+      <div class="prize">${luckyDraw.prize}</div>
+      <p style="font-size:12px; color:#666;">${luckyDraw.round || ''}</p>
+    `;
+  }
+
+  // Photos
+  const grid = document.getElementById('photoGrid');
+  if (sessions.length === 0) {
+    grid.innerHTML = '<div class="empty"><p>No photos yet</p><p style="font-size:12px;">Photos will appear here after your booth session</p></div>';
+    return;
+  }
+
+  grid.innerHTML = sessions.map((s, i) => {
+    const photoSrc = s.photoQrPath
+      ? API + '/api/photo-preview?path=' + encodeURIComponent(s.photoQrPath) + '&w=400'
+      : s.photoPath
+        ? API + '/api/photo-preview?path=' + encodeURIComponent(s.photoPath) + '&w=400'
+        : '';
+    const hasClip = !!s.clipPath;
+
+    return `<div class="photo-card">
+      ${photoSrc ? `<img src="${photoSrc}" onclick="openLightbox('${encodeURIComponent(s.photoQrPath || s.photoPath || '')}', '${encodeURIComponent(s.clipPath || '')}')">` : '<div style="height:120px;background:#eee;"></div>'}
+      <div class="info">
+        <p>${new Date(s.addedAt).toLocaleString()}</p>
+        <div class="photo-actions">
+          ${s.downloadUrl ? `<a class="act-dl" href="${s.downloadUrl}" target="_blank">View</a>` : ''}
+          ${hasClip ? `<button class="act-share" onclick="openLightbox('','${encodeURIComponent(s.clipPath)}')">Video</button>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function addPhoto() {
+  const qrToken = document.getElementById('addQrToken').value.trim();
+  if (!qrToken) return;
+
+  try {
+    const res = await fetch(API + '/api/badge/add-photo/' + token, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ qrToken }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      document.getElementById('addQrToken').value = '';
+      loadData();
+    }
+  } catch {}
+}
+
+function openLightbox(photoPath, clipPath) {
+  const lb = document.getElementById('lightbox');
+  const img = document.getElementById('lbImg');
+  const vid = document.getElementById('lbVideo');
+
+  if (clipPath && decodeURIComponent(clipPath)) {
+    vid.src = API + '/api/clip-preview?path=' + clipPath;
+    vid.style.display = 'block';
+    img.style.display = 'none';
+  } else if (photoPath) {
+    img.src = API + '/api/photo-preview?path=' + photoPath;
+    img.style.display = 'block';
+    vid.style.display = 'none';
+  }
+  lb.classList.add('show');
+}
+
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('show');
+  document.getElementById('lbVideo').pause();
+}
+</script>
+</body>
+</html>

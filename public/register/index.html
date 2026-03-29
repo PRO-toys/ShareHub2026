@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PhotoQRbag — Register</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Inter','Segoe UI',sans-serif; background:#f5f5f5; min-height:100vh; display:flex; justify-content:center; align-items:flex-start; padding:16px; }
+  .card { background:white; border-radius:16px; max-width:420px; width:100%; padding:28px 24px; box-shadow:0 4px 20px rgba(0,0,0,0.08); margin-top:24px; }
+  .header { text-align:center; margin-bottom:24px; }
+  .header h1 { font-size:24px; color:#1a1a2e; margin-bottom:4px; }
+  .header p { font-size:13px; color:#888; }
+  .logo { width:60px; height:60px; background:linear-gradient(135deg,#C9A24A,#E8C876); border-radius:16px; margin:0 auto 12px; display:flex; align-items:center; justify-content:center; font-size:28px; }
+
+  .section { display:none; }
+  .section.active { display:block; }
+
+  .btn { width:100%; padding:14px; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; transition:all 0.2s; margin-bottom:10px; }
+  .btn-line { background:#06C755; color:white; }
+  .btn-line:hover { background:#05a847; }
+  .btn-email { background:white; border:1.5px solid #ddd; color:#333; }
+  .btn-email:hover { background:#f8f8f8; }
+  .btn-walkin { background:#f0f0f0; color:#555; }
+  .btn-walkin:hover { background:#e8e8e8; }
+  .btn-gold { background:linear-gradient(135deg,#C9A24A,#E8C876); color:white; }
+  .btn-gold:hover { opacity:0.9; }
+  .btn:disabled { opacity:0.5; cursor:not-allowed; }
+
+  .divider { text-align:center; margin:16px 0; color:#ccc; font-size:12px; position:relative; }
+  .divider::before,.divider::after { content:''; position:absolute; top:50%; width:35%; height:1px; background:#e0e0e0; }
+  .divider::before { left:0; }
+  .divider::after { right:0; }
+
+  input[type="text"], input[type="email"], input[type="tel"] {
+    width:100%; padding:12px 14px; border:1.5px solid #e0e0e0; border-radius:10px; font-size:14px; margin-bottom:10px; outline:none; transition:border 0.2s;
+  }
+  input:focus { border-color:#C9A24A; }
+
+  .otp-input { text-align:center; font-size:28px; letter-spacing:0.4em; font-weight:700; }
+
+  .success-card { text-align:center; padding:20px 0; }
+  .success-card h2 { color:#22c55e; font-size:20px; margin-bottom:8px; }
+  .success-card .token { background:#f8f8f8; padding:10px; border-radius:8px; font-family:monospace; font-size:18px; color:#C9A24A; font-weight:700; margin:12px 0; }
+
+  .selfie-area { text-align:center; margin:16px 0; }
+  .selfie-area video, .selfie-area img { width:200px; height:200px; object-fit:cover; border-radius:50%; border:3px solid #C9A24A; }
+
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#333; color:white; padding:10px 24px; border-radius:8px; font-size:13px; display:none; z-index:99; }
+  .toast.show { display:block; animation:fadeUp .3s; }
+  @keyframes fadeUp { from { opacity:0; transform:translateX(-50%) translateY(10px); } }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="header">
+    <div class="logo">QR</div>
+    <h1>PhotoQRbag</h1>
+    <p>Register to receive your photos automatically</p>
+  </div>
+
+  <!-- Section: Method Selection -->
+  <div class="section active" id="secMethod">
+    <button class="btn btn-line" onclick="startLINE()">LINE Login</button>
+    <button class="btn btn-email" onclick="showSection('secEmail')">Email OTP</button>
+    <div class="divider">or</div>
+    <button class="btn btn-walkin" onclick="showSection('secWalkin')">Walk-in (Name Only)</button>
+  </div>
+
+  <!-- Section: Email OTP -->
+  <div class="section" id="secEmail">
+    <input type="email" id="otpEmail" placeholder="Email address">
+    <input type="text" id="otpName" placeholder="Name (optional)">
+    <button class="btn btn-gold" id="btnSendOtp" onclick="sendOTP()">Send OTP</button>
+    <div id="otpSent" style="display:none; margin-top:12px;">
+      <p style="font-size:13px; color:#666; margin-bottom:8px;">Enter the 6-digit code sent to your email:</p>
+      <input type="text" id="otpCode" class="otp-input" maxlength="6" placeholder="000000">
+      <button class="btn btn-gold" onclick="verifyOTP()" style="margin-top:8px;">Verify</button>
+    </div>
+    <button class="btn btn-email" onclick="showSection('secMethod')" style="margin-top:8px;">Back</button>
+  </div>
+
+  <!-- Section: Walk-in -->
+  <div class="section" id="secWalkin">
+    <input type="text" id="walkinName" placeholder="Your name">
+    <input type="tel" id="walkinPhone" placeholder="Phone (optional)">
+    <button class="btn btn-gold" onclick="registerWalkin()">Register</button>
+    <button class="btn btn-email" onclick="showSection('secMethod')" style="margin-top:4px;">Back</button>
+  </div>
+
+  <!-- Section: Selfie Capture (after registration) -->
+  <div class="section" id="secSelfie">
+    <h3 style="text-align:center; margin-bottom:12px; color:#1a1a2e;">Take a Selfie (Optional)</h3>
+    <div class="selfie-area">
+      <video id="selfieVideo" autoplay playsinline muted style="display:none;"></video>
+      <canvas id="selfieCanvas" style="display:none;"></canvas>
+      <img id="selfiePreview" src="" style="display:none;">
+      <div id="selfiePlaceholder" style="width:200px;height:200px;border-radius:50%;background:#f0f0f0;margin:0 auto;display:flex;align-items:center;justify-content:center;font-size:48px;color:#ccc;">?</div>
+    </div>
+    <button class="btn btn-gold" id="btnCapture" onclick="captureSelfie()">Open Camera</button>
+    <button class="btn btn-email" onclick="skipSelfie()">Skip</button>
+  </div>
+
+  <!-- Section: Success -->
+  <div class="section" id="secSuccess">
+    <div class="success-card">
+      <h2>Registered!</h2>
+      <p style="color:#666; font-size:14px;" id="successName"></p>
+      <div class="token" id="successToken"></div>
+      <p style="color:#888; font-size:12px; margin-bottom:16px;">This is your PhotoQRbag token</p>
+      <button class="btn btn-gold" onclick="printBadge()">Print Badge</button>
+      <a id="personalLink" href="#" style="display:block; margin-top:8px; color:#C9A24A; font-size:14px;">View Personal Page</a>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '';
+const params = new URLSearchParams(location.search);
+const eventId = params.get('eventId') || 'default';
+let currentToken = params.get('token') || '';
+
+// If already registered (redirected from LINE callback)
+if (currentToken && params.get('registered')) {
+  showSuccess(currentToken);
+}
+
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ─── LINE Login ───
+async function startLINE() {
+  try {
+    const res = await fetch(API + '/api/badge/register/line-auth-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventId }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      location.href = data.data.url;
+    } else {
+      showToast(data.error || 'LINE not configured');
+    }
+  } catch { showToast('Server not reachable'); }
+}
+
+// ─── Email OTP ───
+async function sendOTP() {
+  const email = document.getElementById('otpEmail').value.trim();
+  if (!email) return showToast('Enter email');
+
+  document.getElementById('btnSendOtp').disabled = true;
+  try {
+    const res = await fetch(API + '/api/badge/register/email-send-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, eventId }),
+    });
+    const data = await res.json();
+    document.getElementById('otpSent').style.display = 'block';
+    showToast(data.data?.sent ? 'OTP sent!' : 'OTP saved (SMTP not configured)');
+  } catch { showToast('Failed'); }
+  document.getElementById('btnSendOtp').disabled = false;
+}
+
+async function verifyOTP() {
+  const email = document.getElementById('otpEmail').value.trim();
+  const code = document.getElementById('otpCode').value.trim();
+  const name = document.getElementById('otpName').value.trim();
+  if (!code) return showToast('Enter OTP code');
+
+  try {
+    const res = await fetch(API + '/api/badge/register/email-verify-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code, eventId, name }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      currentToken = data.data.personalToken;
+      showSection('secSelfie');
+    } else {
+      showToast(data.error || 'Invalid OTP');
+    }
+  } catch { showToast('Failed'); }
+}
+
+// ─── Walk-in ───
+async function registerWalkin() {
+  const name = document.getElementById('walkinName').value.trim();
+  if (!name) return showToast('Enter your name');
+  const phone = document.getElementById('walkinPhone').value.trim();
+
+  try {
+    const res = await fetch(API + '/api/badge/register/walk-in', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, eventId, phone }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      currentToken = data.data.personalToken;
+      showSection('secSelfie');
+    } else {
+      showToast(data.error);
+    }
+  } catch { showToast('Failed'); }
+}
+
+// ─── Selfie ───
+let selfieStream = null;
+async function captureSelfie() {
+  const btn = document.getElementById('btnCapture');
+  const video = document.getElementById('selfieVideo');
+  const preview = document.getElementById('selfiePreview');
+  const placeholder = document.getElementById('selfiePlaceholder');
+
+  if (selfieStream) {
+    // Take photo
+    const canvas = document.getElementById('selfieCanvas');
+    canvas.width = 400; canvas.height = 400;
+    const ctx = canvas.getContext('2d');
+    const size = Math.min(video.videoWidth, video.videoHeight);
+    const sx = (video.videoWidth - size) / 2;
+    const sy = (video.videoHeight - size) / 2;
+    ctx.drawImage(video, sx, sy, size, size, 0, 0, 400, 400);
+
+    const imageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+    preview.src = imageBase64;
+    preview.style.display = 'block';
+    video.style.display = 'none';
+    placeholder.style.display = 'none';
+
+    selfieStream.getTracks().forEach(t => t.stop());
+    selfieStream = null;
+    btn.textContent = 'Continue';
+    btn.onclick = uploadSelfie;
+    return;
+  }
+
+  try {
+    selfieStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 640, height: 640 } });
+    video.srcObject = selfieStream;
+    video.style.display = 'block';
+    placeholder.style.display = 'none';
+    btn.textContent = 'Capture';
+  } catch {
+    showToast('Camera not available');
+    skipSelfie();
+  }
+}
+
+async function uploadSelfie() {
+  const canvas = document.getElementById('selfieCanvas');
+  const imageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+
+  try {
+    await fetch(API + '/api/badge/register/selfie', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: currentToken, imageBase64 }),
+    });
+  } catch { /* ok if fails */ }
+
+  showSuccess(currentToken);
+}
+
+function skipSelfie() {
+  if (selfieStream) { selfieStream.getTracks().forEach(t => t.stop()); selfieStream = null; }
+  showSuccess(currentToken);
+}
+
+function showSuccess(token) {
+  currentToken = token;
+  showSection('secSuccess');
+  document.getElementById('successToken').textContent = token;
+  document.getElementById('personalLink').href = '/personal/?token=' + token;
+
+  // Try to get user name
+  fetch(API + '/api/badge/personal/' + token)
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) document.getElementById('successName').textContent = d.data.user.name || '';
+    }).catch(() => {});
+}
+
+function printBadge() {
+  window.open('/badge-preview/?token=' + currentToken, '_blank');
+}
+</script>
+</body>
+</html>

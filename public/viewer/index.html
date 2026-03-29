@@ -1,0 +1,2584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Photo Viewer</title>
+  <style>
+    :root {
+      /* These are overridden by loadTheme() based on event.themeId */
+      --primary: #1D1D1F;
+      --primary-l: #86868B;
+      --bg-start: #FFFFFF;
+      --bg-end: #F5F5F7;
+      --bg-marble: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.015" numOctaves="4" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter><rect width="400" height="400" fill="%23e8e4e0" filter="url(%23n)" opacity="0.35"/></svg>');
+      --th-h: 120px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Shared letterbox/pillarbox shell ── */
+    html.portrait, html.landscape {
+      display: flex; justify-content: center; align-items: center;
+      min-height: 100vh; background: #111;
+    }
+
+    /* 16:9 Landscape — fill full viewport, no letterbox */
+    html.landscape { display: block; background: transparent; overflow: hidden; }
+    html.landscape body {
+      width: 100%;
+      height: 100vh;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    body {
+      font-family: system-ui, -apple-system, Inter, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(0,0,0,0.03), transparent 55%),
+        linear-gradient(180deg, var(--bg-start), var(--bg-end)),
+        var(--bg-marble);
+      background-size: 100% 100%, 100% 100%, 400px 400px;
+      color: #1a1a1a;
+      height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    /* ══ TOP BAR ══ */
+    #topBar {
+      display: flex; align-items: center; justify-content: center;
+      padding: 10px 20px; flex-shrink: 0; z-index: 20; position: relative;
+    }
+    .event-title {
+      font-size: clamp(16px, 2.2vw, 30px);
+      font-weight: 800; color: #1A1A1A;
+      letter-spacing: -0.02em; text-align: center;
+      flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .topbar-right {
+      position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    /* ══ SEARCH PAGE OVERLAY ══ */
+    #searchPage {
+      position: fixed; inset: 0; z-index: 50;
+      background:
+        radial-gradient(circle at top left, rgba(0,0,0,0.03), transparent 55%),
+        linear-gradient(180deg, var(--bg-start), var(--bg-end));
+      display: none; align-items: center; justify-content: center;
+    }
+    #searchPage.open { display: flex; }
+    .sp-card {
+      width: min(460px, calc(100vw - 40px));
+      background: rgba(255,255,255,0.92); backdrop-filter: blur(16px);
+      border-radius: 20px; padding: 32px 28px 24px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.12);
+      display: flex; flex-direction: column; gap: 20px;
+    }
+    .sp-title {
+      font-size: 22px; font-weight: 800; color: #111; text-align: center;
+      letter-spacing: -0.02em;
+    }
+    /* Mode selector tabs */
+    .sp-modes {
+      display: flex; gap: 6px; background: rgba(0,0,0,0.06);
+      border-radius: 12px; padding: 4px;
+    }
+    .sp-mode-btn {
+      flex: 1; height: 36px; border: none; border-radius: 9px;
+      font-size: 13px; font-weight: 700; cursor: pointer;
+      background: transparent; color: #888; transition: all 0.18s;
+    }
+    .sp-mode-btn.active {
+      background: var(--primary); color: #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    /* Tool panels */
+    .sp-tool { display: none; flex-direction: column; gap: 12px; align-items: stretch; }
+    .sp-tool.active { display: flex; }
+    .sp-label {
+      font-size: 13px; font-weight: 600; color: #555; text-align: center;
+    }
+    /* Code input */
+    .sp-code-input {
+      height: 56px; border: 2px solid #e5e7eb; border-radius: 14px;
+      background: #fff; font-size: 28px; font-weight: 800; text-align: center;
+      letter-spacing: 0.3em; color: #111; outline: none;
+      transition: border-color 0.15s;
+    }
+    .sp-code-input:focus { border-color: var(--primary); }
+    /* Time inputs */
+    .sp-time-row {
+      display: flex; gap: 10px; align-items: center; justify-content: center;
+    }
+    .sp-time-input {
+      flex: 1; height: 44px; border: 2px solid #e5e7eb; border-radius: 12px;
+      padding: 0 12px; font-size: 15px; font-weight: 600; text-align: center;
+      background: #fff; outline: none; color: #111;
+      transition: border-color 0.15s;
+    }
+    .sp-time-input:focus { border-color: var(--primary); }
+    .sp-time-sep { font-size: 18px; font-weight: 800; color: #bbb; }
+    /* Face QR */
+    .sp-face-qr-wrap {
+      display: flex; flex-direction: column; align-items: center; gap: 10px;
+    }
+    .sp-face-qr-wrap canvas {
+      width: 150px; height: 150px; border-radius: 10px; display: block;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+    }
+    /* Action buttons */
+    .sp-actions {
+      display: flex; gap: 10px;
+    }
+    .sp-search-btn {
+      flex: 2; height: 48px; border: none; border-radius: 14px;
+      background: var(--primary); color: #fff;
+      font-size: 15px; font-weight: 800; cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .sp-search-btn:hover { opacity: 0.85; }
+    .sp-all-btn {
+      flex: 1; height: 48px; border: 1px solid #e0e0e0; border-radius: 14px;
+      background: #f5f5f5; color: #555;
+      font-size: 13px; font-weight: 700; cursor: pointer;
+    }
+    .sp-all-btn:hover { background: #ebebeb; }
+    .sp-back-btn {
+      position: absolute; top: 16px; left: 16px;
+      width: 36px; height: 36px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.1);
+      background: rgba(255,255,255,0.8); cursor: pointer; font-size: 18px;
+      display: flex; align-items: center; justify-content: center; color: #555;
+    }
+    .sp-back-btn:hover { background: #fff; color: #111; }
+
+    /* ══ SEARCH BAR (legacy — keep hidden, used by old compact mode if needed) ══ */
+    .search-bar {
+      display: flex; align-items: center; gap: 8px;
+      background: rgba(255,255,255,0.9); backdrop-filter: blur(8px);
+      border-radius: 10px; padding: 5px 10px; border: 1px solid rgba(0,0,0,0.1);
+      min-width: 0; flex-shrink: 1;
+    }
+    .search-mode-select {
+      height: 30px; padding: 0 8px; border: 1px solid #ddd; border-radius: 8px;
+      background: #f5f5f5; font-size: 12px; font-weight: 700; color: #333;
+      cursor: pointer; outline: none; flex-shrink: 0;
+      appearance: none; -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 7px center;
+      padding-right: 22px;
+    }
+    .search-tool { display: none; align-items: center; gap: 6px; }
+    .search-tool.active { display: flex; }
+    .search-bar input[type="text"] {
+      height: 30px; width: 72px; border: 1px solid #ddd; border-radius: 8px;
+      background: #fff; padding: 0 8px;
+      font-size: 14px; text-align: center; letter-spacing: 0.15em;
+      outline: none; color: #333; font-weight: 600;
+    }
+    .search-bar input[type="text"]::placeholder { color: #bbb; letter-spacing: 0.08em; }
+    .search-bar input[type="time"] {
+      height: 30px; border: 1px solid #ddd; border-radius: 8px;
+      padding: 0 6px; font-size: 12px; outline: none; color: #333;
+    }
+    .search-bar button {
+      height: 30px; padding: 0 14px; border: none; border-radius: 8px;
+      font-size: 12px; font-weight: 700; cursor: pointer;
+      background: var(--primary); color: #fff; flex-shrink: 0;
+    }
+    .search-bar button:hover { opacity: 0.85; }
+    .search-bar .btn-outline {
+      background: #f0f0f0; color: #555; border: 1px solid #ddd;
+    }
+    .sb-divider { width: 1px; height: 20px; background: #ddd; flex-shrink: 0; }
+    /* Face QR panel */
+    .face-qr-panel {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .face-qr-panel canvas, .face-qr-panel img {
+      width: 76px; height: 76px; border-radius: 5px; display: block; flex-shrink: 0;
+    }
+    .face-qr-info { display: flex; flex-direction: column; gap: 1px; }
+    .face-qr-info .fq-title { font-size: 11px; font-weight: 700; color: #333; }
+    .face-qr-info .fq-sub { font-size: 10px; color: #888; }
+
+    .refresh-btn {
+      width: 36px; height: 36px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.1);
+      background: rgba(255,255,255,0.7); cursor: pointer; font-size: 18px;
+      display: flex; align-items: center; justify-content: center; color: #888;
+    }
+    .refresh-btn:hover { background: #fff; color: #333; }
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.1);
+      font-size: 11px; font-weight: 600; cursor: default;
+      background: #E5E7EB; color: #6B7280;
+    }
+    .status-pill .dot {
+      width: 8px; height: 8px; border-radius: 50%; background: #9CA3AF;
+    }
+    .status-pill.connected {
+      background: #DCFCE7; border-color: #22C55E; color: #15803D;
+    }
+    .status-pill.connected .dot {
+      background: #22C55E;
+    }
+
+    /* ══ CENTER AREA ══ */
+    #centerArea {
+      flex: 1; display: flex; min-height: 0; overflow: hidden; padding: 0 20px; gap: 16px;
+    }
+
+    /* ── Master View ── */
+    #masterView {
+      flex: 1; min-width: 0; position: relative;
+      display: flex; align-items: center; justify-content: center;
+      /* Transparent — body background shows through */
+      background: transparent;
+      overflow: hidden;
+    }
+    #masterSkeleton {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: transparent;
+    }
+    .skeleton-pulse {
+      width: 60%; max-width: 520px; aspect-ratio: 3/2; border-radius: 10px;
+      background: linear-gradient(90deg, rgba(0,0,0,0.07) 25%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.07) 75%);
+      background-size: 200% 100%; animation: skelAnim 1.4s infinite;
+    }
+    @keyframes skelAnim { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    #masterEmpty {
+      position: absolute; inset: 0; display: none;
+      flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #666;
+    }
+    #masterEmpty svg { opacity: 0.3; }
+    #emptyMsg { font-size: 14px; font-weight: 500; }
+    #masterPhoto {
+      position: absolute; inset: 0; display: none;
+      align-items: center; justify-content: center; padding: 8px;
+    }
+    #masterPhoto img {
+      max-width: 100%; max-height: 100%; object-fit: contain;
+      object-position: center center;
+      opacity: 0; transition: opacity 0.3s ease;
+      width: 100%; height: 100%;
+    }
+    #masterPhoto img.loaded { opacity: 1; }
+    #masterVideo {
+      position: absolute; inset: 0; display: none;
+      align-items: center; justify-content: center; padding: 8px;
+      background: transparent;
+    }
+    #masterVideo video {
+      max-width: 100%; max-height: 100%; object-fit: contain;
+      object-position: center center;
+    }
+    /* nav-arrow removed — navigation via thumbnail scroll buttons only */
+
+    /* ── Right Panel (QR + Print) — centered vertically ── */
+    #rightPanel {
+      width: 320px; flex-shrink: 0;
+      display: flex; flex-direction: column; align-items: stretch; gap: 10px;
+      justify-content: flex-end;
+    }
+    .rp-card {
+      background: transparent; border-radius: 14px;
+      padding: 10px; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 8px;
+    }
+    #rpHandle {
+      width: 100%; height: 10px; flex-shrink: 0; cursor: ns-resize;
+      background: transparent; position: relative;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #rpHandle::before {
+      content: ''; position: absolute; left: 0; right: 0; top: 50%;
+      transform: translateY(-50%); height: 1px;
+      background: rgba(0,0,0,0.12); transition: background 0.15s;
+    }
+    #rpHandle::after {
+      content: ''; position: relative; z-index: 1;
+      height: 4px; width: 32px;
+      background: rgba(0,0,0,0.18); border-radius: 2px;
+      transition: background 0.15s;
+    }
+    #rpHandle:hover::before, #rpHandle.dragging::before { background: var(--primary); }
+    #rpHandle:hover::after, #rpHandle.dragging::after { background: var(--primary); }
+    .rp-card-label {
+      width: 100%; font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; color: #333; text-align: center;
+    }
+    .qr-box {
+      width: 100%; aspect-ratio: 1; border-radius: 12px; overflow: hidden;
+      background: transparent; position: relative;
+    }
+    .qr-placeholder {
+      width: 100%; height: 100%;
+      background: transparent; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 6px; color: #999;
+    }
+    .qr-placeholder span { font-size: 11px; color: #777; }
+    .qr-loading {
+      position: absolute; inset: 0; display: none;
+      align-items: center; justify-content: center;
+      background: transparent;
+    }
+    .spin {
+      width: 30px; height: 30px; border: 3px solid rgba(0,0,0,0.1);
+      border-top-color: var(--primary); border-radius: 50%; animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #qrImg { display: none; width: 100%; height: 100%; object-fit: contain; border-radius: 12px; }
+
+    #sessionInfo {
+      width: 100%; text-align: center; font-size: 22px; color: #888;
+    }
+    #sessionTime { font-weight: 600; color: #555; }
+    #sessionId { font-size: 20px; color: #aaa; margin-top: 2px; word-break: break-all; }
+
+    #qrCard {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: flex-end;
+      padding: 10px; gap: 8px;
+    }
+    #printCard {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: stretch; padding: 10px;
+    }
+    #printBtn { flex: 1; min-height: 78px; width: 100%; }
+    #printBtn {
+      width: 100%; height: auto; border-radius: 10px; border: none;
+      background: linear-gradient(135deg, #E91E6C, #D81B60);
+      color: #fff; font-size: 18px; font-weight: 800;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+      box-shadow: 0 4px 16px rgba(233,30,108,0.3);
+      transition: transform 0.1s, box-shadow 0.15s;
+      letter-spacing: 0.04em;
+    }
+    #printBtn:hover:not(:disabled) { transform: scale(1.03); box-shadow: 0 6px 20px rgba(233,30,108,0.4); }
+    #printBtn:active:not(:disabled) { transform: scale(0.97); }
+    #printBtn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    #copyLinkBtn {
+      width: 100%; margin-top: 6px; padding: 10px; border-radius: 10px; border: 1.5px solid var(--primary);
+      background: transparent; color: var(--primary); font-size: 14px; font-weight: 700;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+      transition: background 0.15s, color 0.15s;
+    }
+    #copyLinkBtn:hover:not(:disabled) { background: var(--primary); color: #fff; }
+    #copyLinkBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .print-spin {
+      width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.3);
+      border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite;
+    }
+
+    /* ══ RESIZE HANDLES ══ */
+    #vHandle {
+      width: 16px; flex-shrink: 0; cursor: ew-resize;
+      background: transparent; position: relative; align-self: stretch;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #vHandle::before {
+      content: ''; position: absolute; top: 0; bottom: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 2px; background: rgba(0,0,0,0.12); border-radius: 2px;
+      transition: background 0.15s;
+    }
+    #vHandle::after {
+      content: ''; position: relative; z-index: 1;
+      width: 4px; height: 32px;
+      background: rgba(0,0,0,0.18); border-radius: 2px;
+      transition: background 0.15s;
+    }
+    #vHandle:hover::before, #vHandle.dragging::before { background: var(--primary); }
+    #vHandle:hover::after, #vHandle.dragging::after { background: var(--primary); }
+    #hHandle {
+      height: 10px; flex-shrink: 0; cursor: ns-resize;
+      background: transparent; position: relative;
+    }
+    #hHandle::after {
+      content: ''; position: absolute; left: 0; right: 0; top: 50%;
+      transform: translateY(-50%); height: 1px;
+      background: rgba(0,0,0,0.12); transition: background 0.15s;
+    }
+    #hHandle:hover::after, #hHandle.dragging::after { background: rgba(0,0,0,0.28); }
+
+    /* ══ VIEW MODE TOGGLE — pill slider, theme color ══ */
+    .view-toggle {
+      position: absolute; top: 10px; right: 10px; z-index: 6;
+      display: flex; border-radius: 999px; padding: 3px;
+      background: rgba(0,0,0,0.1); backdrop-filter: blur(6px);
+      border: 1px solid rgba(0,0,0,0.1);
+    }
+    .vt-btn {
+      padding: 5px 20px; font-size: 11px; font-weight: 700; border: none; cursor: pointer;
+      background: transparent; color: rgba(0,0,0,0.4);
+      border-radius: 999px; letter-spacing: 0.05em; transition: all 0.22s ease;
+    }
+    .vt-btn.active {
+      background: var(--primary); color: #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .vt-btn:not(.active):hover { color: rgba(0,0,0,0.7); }
+    .vt-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+
+    /* screen-tabs removed — search is now a full-page overlay */
+
+    /* ══ THUMBNAIL STRIP — fixed to bottom ══ */
+    #thumbWrapper {
+      height: var(--th-h); flex-shrink: 0;
+      display: flex; align-items: stretch; gap: 0;
+      padding: 0 0 4px 0;
+    }
+    .th-scroll-btn {
+      width: 57px; flex-shrink: 0; border: none;
+      background: transparent; cursor: pointer; font-size: 0; color: transparent;
+      display: flex; align-items: center; justify-content: center;
+      transition: opacity 0.15s;
+    }
+    .th-scroll-btn::after {
+      content: ''; display: block; border-style: solid; border-color: transparent;
+    }
+    #thScrollL::after {
+      border-width: 12px 19px 12px 0;
+      border-right-color: var(--primary);
+    }
+    #thScrollR::after {
+      border-width: 12px 0 12px 19px;
+      border-left-color: var(--primary);
+    }
+    .th-scroll-btn:hover:not(:disabled) { opacity: 0.6; }
+    .th-scroll-btn:disabled { opacity: 0.15; cursor: default; }
+    #thumbStrip {
+      flex: 1; display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden;
+      scroll-snap-type: x mandatory; padding: 0 8px;
+      scrollbar-width: none; align-items: stretch;
+      cursor: grab;
+    }
+    #thumbStrip.dragging { cursor: grabbing; user-select: none; }
+    #thumbStrip::-webkit-scrollbar { display: none; }
+    .thumb {
+      flex-shrink: 0; height: 100%;
+      /* Natural image ratio — no forced crop. width adapts to photo's actual ratio */
+      width: auto; min-width: 50px; max-width: 220px;
+      border-radius: 6px; overflow: hidden; cursor: pointer;
+      position: relative; border: 2px solid transparent;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      scroll-snap-align: center; background: linear-gradient(135deg, var(--bg-start), var(--bg-end));
+    }
+    .thumb:hover { border-color: rgba(255,255,255,0.5); }
+    .thumb.active { border-color: var(--primary); }
+    /* object-fit: contain preserves full image ratio without cropping */
+    .thumb img { height: 100%; width: auto; object-fit: contain; display: block; }
+    .thumb.highlight { animation: hlPulse 0.5s 3; }
+    @keyframes hlPulse {
+      0%, 100% { box-shadow: 0 0 0 3px rgba(59,130,246,0.3); }
+      50%       { box-shadow: 0 0 0 6px rgba(59,130,246,0.1); }
+    }
+    .th-empty { width: 100%; text-align: center; color: #999; font-size: 13px; padding: 20px; }
+
+
+    /* ══ QR SCAN MODAL ══ */
+    #qrModal {
+      position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.85);
+      display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    }
+    #qrModal.open { display: flex; }
+    #qrModal video { width: 320px; height: 240px; border-radius: 12px; object-fit: cover; }
+    #qrStatus { color: #fff; font-size: 13px; }
+
+    /* ══ TOAST ══ */
+    #toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      padding: 8px 20px; border-radius: 10px; font-size: 13px; font-weight: 600;
+      transition: opacity 0.3s; pointer-events: none; z-index: 200;
+    }
+    .toast-ok  { background: #22c55e; color: #fff; }
+    .toast-err { background: #ef4444; color: #fff; }
+    .toast-inf { background: #3b82f6; color: #fff; }
+
+    /* Face preview */
+    #facePreviewWrap { display: none; width: 100%; border-radius: 12px; overflow: hidden; position: relative; }
+    #facePreviewVid { width: 100%; display: block; }
+    #faceSnapOverlay {
+      position: absolute; inset: 0; display: none;
+      align-items: center; justify-content: center;
+      background: rgba(255,255,255,0.7); font-size: 18px; font-weight: 700;
+    }
+
+
+    /* ══ LAYOUT ENFORCEMENT — no overflow ══ */
+    /* 16:9 landscape */
+    body.enforce-169 #centerArea { align-items: center; }
+    body.enforce-169 #masterView {
+      flex: none;
+      /* Fit inside available height, maintain 16:9 — width auto-calculated */
+      height: 100%;
+      aspect-ratio: 16/9;
+      max-height: 100%;
+      max-width: calc(100% - 372px); /* rightPanel(320) + vHandle(16) + gaps(26) + margin(10) */
+      min-width: 0;
+    }
+
+    /* fullscreen button removed */
+
+    /* ══ LEFT DOCK — Mac-style magnify ══ */
+    #leftDock {
+      position: fixed; left: 0; top: 50%; transform: translateY(-50%);
+      z-index: 40; display: flex; flex-direction: row; align-items: center;
+      transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    #leftDock.dock-hidden {
+      transform: translateY(-50%) translateX(calc(-100% + 24px));
+    }
+    .dock-inner {
+      background: rgba(255,255,255,0.93); backdrop-filter: blur(14px);
+      border-radius: 0 12px 12px 0;
+      padding: 10px 6px;
+      display: flex; flex-direction: column; gap: 4px; align-items: center;
+      box-shadow: 4px 0 24px rgba(0,0,0,0.13);
+      border: 1px solid var(--primary-l); border-left: none;
+      transition: opacity 0.28s;
+    }
+    #leftDock.dock-hidden .dock-inner {
+      opacity: 0; pointer-events: none;
+    }
+    .dock-item {
+      width: 36px; height: 36px;
+      border: none; border-radius: 8px; background: transparent;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      color: #555;
+      transition: background 0.15s, color 0.15s;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .dock-item:hover { background: rgba(0,0,0,0.06); }
+    .dock-item.active { background: rgba(var(--primary-rgb,201,162,74),0.1); color: var(--primary); }
+    .dock-item.active svg { stroke: var(--primary); }
+    /* Refresh — themed with gold accent, inset from edge */
+    #dockBtnRefresh { color: var(--primary); background: rgba(var(--primary-rgb,201,162,74),0.07); margin: 2px 4px; }
+    #dockBtnRefresh:hover { background: rgba(var(--primary-rgb,201,162,74),0.18); }
+    .dock-sep {
+      width: 24px; height: 1px; background: rgba(0,0,0,0.1); margin: 4px 0;
+    }
+    /* Connection status dot */
+    .dock-conn-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #ef4444; flex-shrink: 0; margin: 4px auto;
+      transition: background 0.3s;
+      box-shadow: 0 0 0 2px rgba(239,68,68,0.2);
+    }
+    .dock-conn-dot.connected {
+      background: #22c55e;
+      box-shadow: 0 0 0 2px rgba(34,197,94,0.2);
+    }
+    .dock-toggle {
+      width: 24px; height: 48px;
+      background: rgba(255,255,255,0.7); backdrop-filter: blur(8px);
+      border: 1px solid rgba(0,0,0,0.08); border-left: none;
+      border-radius: 0 8px 8px 0;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--primary); font-size: 16px; font-weight: 900;
+      transition: color 0.15s, background 0.15s;
+      flex-shrink: 0;
+    }
+    .dock-toggle:hover { background: rgba(255,255,255,0.95); }
+    .dock-toggle:hover { color: var(--primary); opacity: 0.7; }
+
+    /* ══ LOGO BAR ══ */
+    #logoBar {
+      position: absolute; z-index: 8;
+      top: 0; left: 0; right: 0;
+      padding: 10px 14px 10px 0;
+      display: flex; align-items: flex-start;
+      pointer-events: none;
+    }
+    #logoBar.align-left  { justify-content: flex-start; }
+    #logoBar.align-center { justify-content: center; }
+    #logoBar.align-right { justify-content: flex-end; }
+    #logoImg {
+      object-fit: contain; max-width: 60%;
+      filter: drop-shadow(0 1px 4px rgba(0,0,0,0.35));
+      pointer-events: auto;
+    }
+
+    /* ══ SETTINGS PANEL ══ */
+    #settingsPanel {
+      position: fixed; inset: 0; z-index: 60;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.5);
+    }
+    #settingsPanel.open { display: flex; }
+    .sp-settings-card {
+      width: min(400px, calc(100vw - 32px));
+      max-height: 85vh; overflow-y: auto;
+      background: #fff; border-radius: 20px;
+      padding: 24px 20px; display: flex; flex-direction: column; gap: 20px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.2);
+    }
+    .sp-settings-card::-webkit-scrollbar { width: 4px; }
+    .sp-settings-card::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
+    .sps-title {
+      font-size: 18px; font-weight: 800; color: #1A1A1A; text-align: center;
+      letter-spacing: -0.02em;
+    }
+    .sps-section { display: flex; flex-direction: column; gap: 10px; }
+    .sps-label {
+      font-size: 12px; font-weight: 700; color: #1A1A1A; text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .sps-row { display: flex; gap: 8px; align-items: center; }
+    .sps-input {
+      flex: 1; height: 38px; border: 1.5px solid #e5e7eb; border-radius: 10px;
+      padding: 0 10px; font-size: 13px; outline: none; color: #111;
+    }
+    .sps-input:focus { border-color: var(--primary); }
+    .sps-btn {
+      height: 38px; padding: 0 14px; border: none; border-radius: 10px;
+      background: var(--primary); color: #fff;
+      font-size: 12px; font-weight: 700; cursor: pointer; flex-shrink: 0;
+    }
+    .sps-btn-outline {
+      background: #f5f5f5; color: #555; border: 1px solid #e0e0e0;
+    }
+    .sps-align-btns { display: flex; gap: 4px; }
+    .sps-align-btn {
+      flex: 1; height: 34px; border: 1.5px solid #e5e7eb; border-radius: 8px;
+      background: #f8f8f8; cursor: pointer; font-size: 14px;
+      transition: all 0.15s;
+    }
+    .sps-align-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .sps-size-row { display: flex; gap: 10px; align-items: center; }
+    .sps-size-row input[type="range"] { flex: 1; }
+    .sps-size-val { font-size: 12px; font-weight: 600; color: #555; min-width: 36px; text-align: right; }
+    .sps-close-btn {
+      width: 100%; height: 44px; border: none; border-radius: 12px;
+      background: var(--primary); color: #fff; font-size: 14px; font-weight: 700; cursor: pointer;
+      transition: opacity .15s;
+    }
+    .sps-close-btn:hover { opacity: .85; }
+    /* File upload hidden input */
+    #logoFileInput { display: none; }
+  </style>
+</head>
+<body>
+
+<!-- Hidden connStatus — kept for JS compat -->
+<div id="connStatus" style="display:none"><span class="dot"></span><span></span></div>
+
+<!-- ══ CENTER AREA ══ -->
+<div id="centerArea">
+  <!-- Master View -->
+  <div id="masterView">
+    <!-- Logo overlay — sits on top of photo -->
+    <div id="logoBar" class="align-left">
+      <img id="logoImg" src="" alt="" style="display:none" />
+    </div>
+    <div id="masterSkeleton"><div class="skeleton-pulse"></div></div>
+    <div id="masterEmpty">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+        <rect x="3" y="3" width="18" height="18" rx="3"/>
+        <circle cx="8.5" cy="8.5" r="1.5"/>
+        <polyline points="21 15 16 10 5 21"/>
+      </svg>
+      <span id="emptyMsg">No photos yet</span>
+    </div>
+    <div id="masterPhoto"><img id="mainImg" src="" alt="" /></div>
+    <div id="masterVideo"><video id="mainVid" autoplay loop muted playsinline></video></div>
+
+    <!-- ── Search Overlay (inside Master View) ── -->
+    <div id="masterSearch" style="display:none; position:absolute; inset:0; background:linear-gradient(180deg, var(--bg-start, #FAFAF8), var(--bg-end, #F5F0E6)); z-index:20; align-items:center; justify-content:center; overflow-y:auto;">
+      <div style="width:min(420px, 85%); display:flex; flex-direction:column; gap:16px;">
+        <div id="searchInlineTitle" style="font-size:20px; font-weight:800; color:#111; text-align:center; letter-spacing:-0.02em;">Search Photos</div>
+
+        <!-- Code sub-panel -->
+        <div id="inlineCode" style="display:flex; flex-direction:column; gap:10px;">
+          <input type="text" id="inlineCodeInput" maxlength="4" placeholder="CODE"
+            oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')"
+            onkeydown="if(event.key==='Enter') execInlineSearch('code')"
+            style="height:56px; border:2px solid #e5e7eb; border-radius:14px; background:#fff; font-size:28px; font-weight:800; text-align:center; letter-spacing:0.3em; color:#111; outline:none; transition:border-color 0.15s;" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='#e5e7eb'" />
+        </div>
+
+        <!-- Time sub-panel (Google-style: date auto-detect + single start time) -->
+        <div id="inlineTime" style="display:none; flex-direction:column; gap:10px; align-items:center;">
+          <div id="inlineDateRow" style="display:none; margin-bottom:4px;">
+            <input type="date" id="inlineDatePicker" style="height:40px; border:2px solid #e5e7eb; border-radius:10px; padding:0 14px; font-size:14px; font-weight:600; text-align:center; background:#fff; outline:none; color:#111; transition:border-color 0.15s;" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='#e5e7eb'" />
+          </div>
+          <div style="font-size:11px; color:#9CA3AF; margin-bottom:-4px;">Show photos from</div>
+          <input type="time" id="inlineTimeStart" onkeydown="if(event.key==='Enter') execInlineSearch('time')"
+            style="width:200px; height:56px; border:2px solid #e5e7eb; border-radius:14px; padding:0 16px; font-size:24px; font-weight:700; text-align:center; background:#fff; outline:none; color:#111; transition:border-color 0.15s;" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='#e5e7eb'" />
+          <div style="font-size:10px; color:#D1D5DB;">onwards</div>
+        </div>
+
+        <!-- Face sub-panel (choose: Snap or QR) -->
+        <div id="inlineFace" style="display:none; flex-direction:column; gap:16px; align-items:center;">
+          <!-- Mode toggle: Snap / QR -->
+          <div style="display:flex; gap:4px; background:rgba(0,0,0,0.04); border-radius:12px; padding:3px;">
+            <button id="faceModeCam" onclick="setFaceMode('cam')" style="flex:1; padding:8px 20px; border:none; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer; background:var(--primary); color:#fff; transition:all 0.15s; display:inline-flex; align-items:center; justify-content:center; gap:5px; white-space:nowrap;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" style="flex-shrink:0"><rect x="2" y="5" width="20" height="14" rx="3"/><circle cx="12" cy="12" r="3.5"/></svg>Snap
+            </button>
+            <button id="faceModeQr" onclick="setFaceMode('qr')" style="flex:1; padding:8px 20px; border:none; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer; background:transparent; color:#888; transition:all 0.15s; display:inline-flex; align-items:center; justify-content:center; gap:5px; white-space:nowrap;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/></svg>QR
+            </button>
+          </div>
+
+          <!-- Fixed-height container so Snap/QR don't shift layout -->
+          <div style="min-height:425px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+            <!-- Snap view -->
+            <div id="faceSnapView" style="display:flex; flex-direction:column; align-items:center; gap:12px;">
+              <div style="width:min(525px, 90%); aspect-ratio:4/3; border-radius:20px; overflow:hidden; position:relative; background:linear-gradient(135deg, rgba(201,162,74,0.08), rgba(201,162,74,0.15)); border:2px solid rgba(201,162,74,0.2);">
+                <video id="faceCamVid" autoplay playsinline muted style="width:100%; height:100%; object-fit:cover; transform:scaleX(-1);"></video>
+                <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none;">
+                  <div style="width:35%; aspect-ratio:3/4; border:2px solid rgba(201,162,74,0.4); border-radius:50%; box-shadow:0 0 30px rgba(201,162,74,0.15);"></div>
+                </div>
+              </div>
+              <button onclick="snapFaceSearch()" style="padding:12px 40px; border:none; border-radius:14px; background:var(--primary); color:#fff; font-size:15px; font-weight:800; cursor:pointer; box-shadow:0 4px 16px rgba(201,162,74,0.3); transition:all 0.15s;" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform=''">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" style="vertical-align:middle;margin-right:6px"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>Snap & Search
+              </button>
+            </div>
+
+            <!-- QR view -->
+            <div id="faceQrView" style="display:none; flex-direction:column; align-items:center; gap:16px;">
+              <div style="padding:20px; background:white; border-radius:16px; box-shadow:0 4px 20px rgba(0,0,0,0.08); border:1px solid rgba(201,162,74,0.15);">
+                <canvas id="inlineFaceQr" width="250" height="250" style="width:250px; height:250px; display:block;"></canvas>
+              </div>
+              <div style="font-size:13px; color:#9CA3AF; text-align:center; max-width:350px; line-height:1.5;">Scan with phone camera<br/>to take a selfie and search</div>
+              <button onclick="clearInlineSearch()" style="padding:10px 28px; border:1px solid #e0e0e0; border-radius:10px; background:#f8f9fa; color:#3c4043; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;">Close</button>
+            </div>
+          </div>
+
+          <div id="inlineFaceStatus" style="font-size:13px; color:var(--primary); text-align:center; font-weight:600;"></div>
+        </div>
+
+        <!-- Action buttons — hidden in Face mode (Face has its own buttons) -->
+        <div id="searchActionBtns" style="display:flex; gap:10px; justify-content:center;">
+          <button onclick="execInlineSearch()" style="padding:10px 28px; border:1px solid #e0e0e0; border-radius:8px; background:#f8f9fa; color:#3c4043; font-size:13px; font-weight:600; cursor:pointer; transition:all 0.15s; font-family:inherit;" onmouseover="this.style.borderColor='#dadce0';this.style.boxShadow='0 1px 3px rgba(0,0,0,0.1)'" onmouseout="this.style.borderColor='#e0e0e0';this.style.boxShadow=''">
+            Search
+          </button>
+          <button onclick="clearInlineSearch()" style="padding:10px 28px; border:1px solid #e0e0e0; border-radius:8px; background:#f8f9fa; color:#3c4043; font-size:13px; font-weight:600; cursor:pointer; transition:all 0.15s; font-family:inherit;" onmouseover="this.style.borderColor='#dadce0';this.style.boxShadow='0 1px 3px rgba(0,0,0,0.1)'" onmouseout="this.style.borderColor='#e0e0e0';this.style.boxShadow=''">
+            Close
+          </button>
+        </div>
+
+        <!-- Results -->
+        <div id="inlineSearchResult" style="font-size:13px; color:#9CA3AF; text-align:center; min-height:20px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vertical resize handle -->
+  <div id="vHandle"></div>
+
+  <!-- Right Panel: QR + Print -->
+  <div id="rightPanel">
+    <div id="qrCard">
+      <div class="qr-box" id="qrBox">
+        <div class="qr-placeholder" id="qrPlaceholder">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4">
+            <rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/>
+            <rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="4" height="4"/>
+          </svg>
+          <span>Select a photo</span>
+        </div>
+        <div class="qr-loading" id="qrLoading" style="display:none"><div class="spin"></div></div>
+        <img id="qrImg" src="" alt="QR" />
+      </div>
+      <div id="sessionInfo">
+        <div id="sessionTime"></div>
+        <div id="sessionId"></div>
+      </div>
+    </div>
+    <div id="rpHandle"></div>
+    <div id="printCard">
+      <button id="printBtn" onclick="printCurrent()" disabled>
+        <span id="printLabel">Print</span>
+      </button>
+    </div>
+
+    <!-- Search inline moved to Master View -->
+  </div>
+</div>
+
+<!-- ══ RESIZE HANDLE ══ -->
+<div id="hHandle"></div>
+
+<!-- ══ THUMBNAIL STRIP ══ -->
+<div id="thumbWrapper">
+  <button class="th-scroll-btn" id="thScrollL" onclick="scrollThumbs(-1)" disabled>◀</button>
+  <div id="thumbStrip" onscroll="updateThumbArrows()">
+    <div class="th-empty">Loading…</div>
+  </div>
+  <button class="th-scroll-btn" id="thScrollR" onclick="scrollThumbs(1)" disabled>▶</button>
+</div>
+
+<!-- ══ BRAND FOOTNOTE ══ -->
+<div id="brandFooter" style="flex-shrink:0; display:flex; align-items:flex-start; justify-content:center; padding-top:8px; min-height:39px; font-size:14px; color:#4B4B4B; letter-spacing:0.08em;">
+  <span id="brandName">Multi-Snaps Booth</span>
+</div>
+
+
+<!-- ══ LEFT DOCK — Mac magnify dock ══ -->
+<div id="leftDock" class="dock-hidden">
+  <div class="dock-inner" id="dockInner">
+
+    <!-- Layout buttons removed — switching handled in Admin ViewerTab -->
+    <div id="dockBtn169" style="display:none"></div>
+    <div id="dockBtn916" style="display:none"></div>
+
+    <!-- Photo — custom frame with sun-dot + horizon wave -->
+    <button class="dock-item" id="dockBtnPhoto" onclick="dockAction(function(){ setViewMode('photo'); })" title="Photo">
+      <svg width="20" height="18" viewBox="0 0 13 12" fill="none">
+        <rect x=".7" y=".7" width="11.6" height="10.6" rx="2" stroke="currentColor" stroke-width="1.3"/>
+        <circle cx="4" cy="4" r="1.3" fill="currentColor"/>
+        <path d="M1.2 9.5 L4 7 L6.5 8.8 L9 6.5 L12 9.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+
+    <!-- Video — film strip with play marker -->
+    <button class="dock-item" id="dockBtnVideo" onclick="dockAction(function(){ setViewMode('video'); })" title="Video">
+      <svg width="20" height="17" viewBox="0 0 13 11" fill="none">
+        <rect x=".7" y="1.5" width="11.6" height="8" rx="1.6" stroke="currentColor" stroke-width="1.3"/>
+        <line x1=".7" y1="4" x2="3" y2="4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+        <line x1=".7" y1="7" x2="3" y2="7" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+        <line x1="10" y1="4" x2="12.3" y2="4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+        <line x1="10" y1="7" x2="12.3" y2="7" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+        <polygon points="5.2,3.8 5.2,7.2 8.8,5.5" fill="currentColor"/>
+      </svg>
+    </button>
+
+    <div class="dock-sep"></div>
+
+    <!-- Code Search — hash in rounded box -->
+    <button class="dock-item" id="dockBtnCode" onclick="dockAction(function(){ toggleSearchInline('code'); })" title="Search by Code">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="4" width="16" height="16" rx="3"/>
+        <text x="12" y="16.5" text-anchor="middle" font-size="13" font-weight="800" fill="currentColor" stroke="none">#</text>
+      </svg>
+    </button>
+
+    <!-- Time Search — clock -->
+    <button class="dock-item" id="dockBtnTime" onclick="dockAction(function(){ toggleSearchInline('time'); })" title="Search by Time">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M12 7v5l3 3"/>
+      </svg>
+    </button>
+
+    <!-- Face Search — person with magnifier -->
+    <button class="dock-item" id="dockBtnFace" onclick="dockAction(function(){ toggleSearchInline('face'); })" title="Search by Face">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="10" cy="8" r="4"/>
+        <path d="M2 21v-1a7 7 0 0114 0v1"/>
+        <circle cx="19" cy="16" r="3.5"/>
+        <line x1="22" y1="19" x2="24" y2="21"/>
+      </svg>
+    </button>
+
+    <div class="dock-sep"></div>
+
+    <!-- Refresh — two offset arcs forming a cycle -->
+    <button class="dock-item" id="dockBtnRefresh" onclick="loadSessions()" title="Refresh photos">
+      <svg width="20" height="20" viewBox="0 0 13 13" fill="none">
+        <path d="M2.2 4.5 A5 5 0 0 1 11 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M10.8 8.5 A5 5 0 0 1 2 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        <polyline points="1,3 2.2,4.5 3.8,3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+        <polyline points="12,10 10.8,8.5 9.2,9.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+
+    <!-- Render button removed -->
+
+    <!-- Fullscreen — four corners expanding outward -->
+    <button class="dock-item" id="dockBtnFullscreen" onclick="toggleFullscreen()" title="เต็มจอ">
+      <svg width="20" height="20" viewBox="0 0 13 13" fill="none">
+        <polyline points="1,4 1,1 4,1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <polyline points="9,1 12,1 12,4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <polyline points="12,9 12,12 9,12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <polyline points="4,12 1,12 1,9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+
+    <!-- Connection status dot -->
+    <div id="dockConnDot" class="dock-conn-dot" title="Server connection"></div>
+
+    <!-- Size Controls + Render removed — controlled from Admin ViewerTab -->
+
+  </div>
+  <button class="dock-toggle" id="dockToggleBtn" onclick="toggleDock()">›</button>
+</div>
+
+<!-- ══ RENDER PANEL ══ -->
+<div id="renderPanel" style="display:none; position:fixed; left:0; top:0; bottom:0; width:240px; background:#1a1a1a; z-index:60; overflow-y:auto; box-shadow:4px 0 20px rgba(0,0,0,0.6); font-family:inherit;">
+  <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 12px 10px; border-bottom:1px solid #2a2a2a;">
+    <span style="font-size:12px; font-weight:700; color:#C9A24A; letter-spacing:0.06em; text-transform:uppercase;">Render Clip</span>
+    <button onclick="closeRenderPanel()" style="background:none;border:none;color:#666;cursor:pointer;font-size:15px;line-height:1;padding:2px 4px;">✕</button>
+  </div>
+  <div style="padding:12px;">
+    <!-- Frame duration -->
+    <div style="margin-bottom:10px;">
+      <label style="font-size:10px;color:#888;display:block;margin-bottom:3px;letter-spacing:0.04em;">DURATION PER PHOTO (ms)</label>
+      <input type="number" id="rFrameMs" value="250" min="100" max="3000" step="50"
+        style="width:100%;box-sizing:border-box;background:#242424;border:1px solid #383838;color:#e0e0e0;padding:6px 8px;border-radius:6px;font-size:12px;outline:none;">
+    </div>
+    <!-- Total length -->
+    <div style="margin-bottom:10px;">
+      <label style="font-size:10px;color:#888;display:block;margin-bottom:3px;letter-spacing:0.04em;">TOTAL CLIP LENGTH (s)</label>
+      <input type="number" id="rTotalS" value="5" min="1" max="60" step="1"
+        style="width:100%;box-sizing:border-box;background:#242424;border:1px solid #383838;color:#e0e0e0;padding:6px 8px;border-radius:6px;font-size:12px;outline:none;">
+    </div>
+    <!-- Ratio -->
+    <div style="margin-bottom:10px;">
+      <label style="font-size:10px;color:#888;display:block;margin-bottom:3px;letter-spacing:0.04em;">CLIP RATIO</label>
+      <select id="rRatio" style="width:100%;box-sizing:border-box;background:#242424;border:1px solid #383838;color:#e0e0e0;padding:6px 8px;border-radius:6px;font-size:12px;outline:none;">
+        <option value="3:2" selected>3:2 — Landscape (1800×1200)</option>
+        <option value="9:16">9:16 — Portrait (720×1280)</option>
+        <option value="4:3">4:3 (1600×1200)</option>
+        <option value="1:1">1:1 — Square (1200×1200)</option>
+      </select>
+    </div>
+    <!-- Random -->
+    <div style="margin-bottom:12px; display:flex; align-items:center; gap:8px;">
+      <input type="checkbox" id="rRandom" checked style="accent-color:#C9A24A; width:14px; height:14px; cursor:pointer;">
+      <label for="rRandom" style="font-size:11px;color:#aaa;cursor:pointer;">Random photo order</label>
+    </div>
+    <div style="border-top:1px solid #2a2a2a; margin-bottom:10px;"></div>
+    <!-- Overlay -->
+    <div style="margin-bottom:12px;">
+      <label style="font-size:10px;color:#888;display:block;margin-bottom:6px;letter-spacing:0.04em;">OVERLAY / MASK (PNG)</label>
+      <div id="rOverlayThumb" style="display:none; margin-bottom:6px; position:relative;">
+        <img id="rOverlayImg" style="width:100%; border-radius:4px; border:1px solid #383838; display:block;">
+        <button onclick="removeRenderOverlay()" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.75);border:none;color:#fff;cursor:pointer;border-radius:4px;padding:2px 6px;font-size:10px;">✕</button>
+      </div>
+      <div id="rOverlayList" style="max-height:90px; overflow-y:auto; margin-bottom:6px;"></div>
+      <label style="display:block;background:#242424;border:1px solid #383838;color:#888;padding:6px 8px;border-radius:6px;font-size:11px;cursor:pointer;text-align:center;">
+        + Upload PNG Overlay
+        <input type="file" accept="image/png" onchange="uploadRenderOverlay(this)" style="display:none;">
+      </label>
+    </div>
+    <!-- Render button -->
+    <button onclick="triggerRender()" id="rBtn" style="width:100%;background:#C9A24A;color:#fff;border:none;padding:10px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.04em;">
+      ▶ &nbsp;RENDER
+    </button>
+    <div id="rStatus" style="margin-top:8px;font-size:10px;color:#888;text-align:center;min-height:16px;"></div>
+  </div>
+</div>
+
+<!-- ══ SEARCH PAGE OVERLAY ══ -->
+<div id="searchPage">
+  <button class="sp-back-btn" onclick="setScreen('viewer')" title="Back to viewer">←</button>
+  <div class="sp-card">
+    <div class="sp-title">Search Photos</div>
+
+    <!-- Mode tabs -->
+    <div class="sp-modes">
+      <button class="sp-mode-btn active" id="spModeCode" onclick="setSearchMode('code')">Code</button>
+      <button class="sp-mode-btn" id="spModeTime" onclick="setSearchMode('time')">Time</button>
+      <button class="sp-mode-btn" id="spModeFace" onclick="setSearchMode('face')">Face</button>
+    </div>
+
+    <!-- ── Code tool ── -->
+    <div id="searchCode" class="sp-tool active">
+      <input class="sp-code-input" type="text" id="codeInput" maxlength="4"
+        oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')"
+        onkeydown="if(event.key==='Enter') execSearch('code')" />
+    </div>
+
+    <!-- ── Time tool ── -->
+    <div id="searchTime" class="sp-tool">
+      <div class="sp-label">ช่วงเวลา</div>
+      <div class="sp-time-row">
+        <input class="sp-time-input" type="datetime-local" id="timeFrom" />
+        <span class="sp-time-sep">–</span>
+        <input class="sp-time-input" type="datetime-local" id="timeTo" />
+      </div>
+      <button class="sp-all-btn" style="margin-top:6px;width:100%;font-size:12px" onclick="resetTimeDefaults()">↺ Reset to Default</button>
+    </div>
+
+    <!-- ── Face tool ── -->
+    <div id="searchFace" class="sp-tool">
+      <div class="sp-label">ถ่ายเซลฟี่ค้นหาภาพ</div>
+      <!-- Camera preview (inside search page) -->
+      <div id="facePreviewWrap" style="display:none;position:relative;width:100%;border-radius:10px;overflow:hidden;background:#000;margin-bottom:8px">
+        <video id="facePreviewVid" autoplay playsinline muted style="width:100%;display:block;max-height:360px;object-fit:cover"></video>
+        <div id="faceSnapOverlay" style="display:none;position:absolute;inset:0;background:rgba(255,255,255,0.65);align-items:center;justify-content:center;font-size:28px">📸</div>
+      </div>
+      <!-- File upload (works on HTTP / mobile / any browser) -->
+      <label style="display:block;margin-bottom:6px">
+        <input type="file" id="faceFileInput" accept="image/*" capture="user" style="display:none" onchange="onFaceFileSelected(this)" />
+        <span class="sp-all-btn" style="display:block;text-align:center;cursor:pointer">📸 Take / Upload Photo</span>
+      </label>
+      <!-- Webcam (Electron / localhost only) -->
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <button id="faceOpenBtn" class="sp-all-btn" style="flex:1;font-size:11px" onclick="toggleFaceCamera()">📷 Webcam</button>
+        <button id="faceSnapBtn" class="sp-all-btn" style="flex:1;font-size:11px" onclick="snapFace()" disabled>📸 Snap</button>
+      </div>
+      <button id="faceSearchBtn" class="sp-all-btn" style="width:100%;background:var(--primary);color:#fff;font-weight:700;margin-bottom:10px" onclick="searchByFace()" disabled>🔍 Search Face</button>
+      <!-- Index status -->
+      <div style="border-top:1px solid #eee;padding-top:8px">
+        <div id="faceIndexStatus" style="font-size:11px;color:#aaa;text-align:center;margin-bottom:4px">ไม่มีข้อมูล index — กด Index ก่อนใช้งาน</div>
+        <button id="faceIndexBtn" class="sp-all-btn" style="width:100%;font-size:12px" onclick="indexFacePhotos()">📂 Index Event Photos</button>
+      </div>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="sp-actions">
+      <button class="sp-search-btn" onclick="execSearch(S.mode)">
+        <svg width="14" height="14" viewBox="0 0 13 13" fill="none" style="display:inline;vertical-align:middle;margin-right:6px">
+          <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" stroke-width="1.4"/>
+          <line x1="8.5" y1="8.5" x2="12" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <circle cx="4.4" cy="4.4" r="1.1" fill="currentColor" opacity=".5"/>
+        </svg>
+        Search
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ QR SCAN MODAL ══ -->
+<div id="qrModal">
+  <video id="qrVid" autoplay playsinline muted></video>
+  <div id="qrStatus">Point camera at QR code…</div>
+  <button style="height:36px;padding:0 20px;border-radius:10px;border:none;background:#fff;color:#111;font-weight:700;cursor:pointer" onclick="stopQrScan()">Cancel</button>
+</div>
+
+<div id="toast" style="opacity:0"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+<script src="folder-browser.js"></script>
+<script src="face-search.js"></script>
+<script>
+'use strict';
+
+var P = new URLSearchParams(window.location.search);
+var BASE = window.location.origin;
+var EVENT_ID = P.get('eventId');
+
+// HTTPS upgrade helpers — camera requires secure context
+var HTTPS_BASE = null;
+(function() {
+  if (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1') return;
+  fetch(BASE + '/api/network/ip').then(function(r) { return r.json(); }).then(function(d) {
+    if (d.httpsPort) HTTPS_BASE = 'https://' + location.hostname + ':' + d.httpsPort;
+  }).catch(function() {});
+}());
+function getHttpsUrl() {
+  if (HTTPS_BASE) return HTTPS_BASE + location.pathname + location.search;
+  // fallback: swap port 3100→3443
+  return location.href.replace(/^http:/, 'https:').replace(':' + location.port, ':3443');
+}
+
+var S = {
+  all: [], filtered: [], idx: -1,
+  mode: 'viewer', viewMode: 'video', hasVideos: false,
+  screen: 'viewer', // 'viewer' | 'search'
+  printing: false, qrLoading: false, useQrPhoto: false, hideCode: false,
+  faceStream: null, faceCapture: null, cameras: [], camId: '',
+  qrStream: null, qrAnim: null,
+};
+
+var THEMES = {
+  'premium-white-gold':   { p: '#C9A24A', pl: '#E8D5A0', bg1: '#FAFAF8', bg2: '#F5F0E6' },
+  'premium-white-silver': { p: '#8E8E93', pl: '#C7C7CC', bg1: '#FAFAFA', bg2: '#F0F0F5' },
+  'wedding':              { p: '#C9979E', pl: '#E8C5C9', bg1: '#FFF9F9', bg2: '#F5EAEB' },
+  'fusion':               { p: '#8B5CF6', pl: '#C4B5FD', bg1: '#FAFAFF', bg2: '#F0EAFA' },
+  'apple-minimal':        { p: '#1D1D1F', pl: '#86868B', bg1: '#FFFFFF', bg2: '#F5F5F7' },
+  'party-time':           { p: '#FF6B35', pl: '#FFB088', bg1: '#FFFAF8', bg2: '#FFF0E8' },
+};
+
+// ── Layout Toggle (16:9 / 9:16) ──
+function setLayout(mode) {
+  var isPortrait = mode === '9:16';
+  document.body.classList.toggle('portrait', isPortrait);
+  document.body.classList.toggle('enforce-169', !isPortrait);
+  // html class drives letterbox/pillarbox CSS
+  document.documentElement.classList.toggle('portrait', isPortrait);
+  document.documentElement.classList.toggle('landscape', !isPortrait);
+  var b169 = document.getElementById('layoutBtn169');
+  var b916 = document.getElementById('layoutBtn916');
+  if (b169 && b916) {
+    b169.classList.toggle('active', !isPortrait);
+    b916.classList.toggle('active', isPortrait);
+  }
+  updateDockState();
+}
+
+
+// ── Screen Toggle (Viewer / Search page overlay) ──
+function setScreen(screen) {
+  S.screen = screen;
+  var btnV = document.getElementById('screenViewer');
+  var btnS = document.getElementById('screenSearch');
+  if (btnV) btnV.classList.toggle('active', screen === 'viewer');
+  if (btnS) btnS.classList.toggle('active', screen === 'search');
+
+  var sp = document.getElementById('searchPage');
+  if (sp) sp.classList.toggle('open', screen === 'search');
+
+  // Clear code input every time search opens
+  if (screen === 'search') {
+    var ci = document.getElementById('codeInput');
+    if (ci) ci.value = '';
+  }
+
+  // Auto-start face QR when opening search page in face mode
+  if (screen === 'search' && S.mode === 'face') startFaceUploadQr();
+  // Stop polling when leaving search
+  if (screen === 'viewer') stopFaceUploadPoll();
+}
+
+// ── Connection Dot ──
+function setConnDot(ok) {
+  var dot = document.getElementById('dockConnDot');
+  if (dot) dot.classList.toggle('connected', ok);
+}
+
+// ── WebSocket real-time ──
+var _ws = null;
+var _wsTimer = null;
+var _loadTimer = null; // debounce loadSessions from WS
+
+function initWS() {
+  clearTimeout(_wsTimer);
+  try {
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    _ws = new WebSocket(proto + '//' + location.host + '/ws/dashboard');
+    _ws.onopen = function() {
+      setConnDot(true);
+    };
+    _ws.onclose = function() {
+      setConnDot(false);
+      _wsTimer = setTimeout(initWS, 5000); // auto-reconnect
+    };
+    _ws.onerror = function() {
+      setConnDot(false);
+    };
+    _ws.onmessage = function(e) {
+      try {
+        var msg = JSON.parse(e.data);
+        // New session completed → refresh photo list (debounced 1.5s)
+        if (msg.type === 'dashboard:activity') {
+          clearTimeout(_loadTimer);
+          _loadTimer = setTimeout(loadSessions, 1500);
+        }
+        // Live viewer config update from ViewerTab
+        if (msg.type === 'viewer:config' && msg.payload) {
+          var p = msg.payload;
+          // Only apply if for this event (or no eventId filter)
+          if (!p.eventId || p.eventId === EVENT_ID) {
+            applyViewerConfig(p.config);
+          }
+        }
+      } catch(_) {}
+    };
+  } catch(err) {
+    setConnDot(false);
+    _wsTimer = setTimeout(initWS, 5000);
+  }
+}
+
+// Legacy stub — kept for any remaining calls
+function setConnStatus(ok) { setConnDot(ok); }
+
+// ── Search Mode (search-page tabs) ──
+function setSearchMode(mode) {
+  S.mode = mode;
+  // Update tab buttons
+  ['code','time','face'].forEach(function(m) {
+    var btn = document.getElementById('spMode' + m.charAt(0).toUpperCase() + m.slice(1));
+    if (btn) btn.classList.toggle('active', m === mode);
+  });
+  // Toggle sp-tool panels (they now live inside searchPage)
+  ['searchCode','searchTime','searchFace'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var key = id.replace('search','').toLowerCase();
+    el.classList.toggle('active', key === mode);
+  });
+  // Time: auto-fill defaults
+  if (mode === 'time') fillTimeDefaults();
+  // Face: check index status
+  if (mode === 'face') checkFaceIndexStatus();
+  else stopFaceUploadPoll();
+}
+
+// ── Execute search & switch to viewer ──
+function execSearch(mode) {
+  if (mode === 'code') {
+    searchByCode();
+  } else if (mode === 'time') {
+    searchByTime();
+  } else if (mode === 'face') {
+    searchByFace();
+    return;
+  }
+  // After search, show viewer with results
+  setScreen('viewer');
+}
+
+// ── Face Upload QR ──
+var _faceToken = null;
+var _facePoll = null;
+var _facePollCount = 0;
+
+function startFaceUploadQr() {
+  stopFaceUploadPoll();
+  // Generate unique token
+  _faceToken = Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+  var uploadUrl = BASE + '/face-upload?token=' + _faceToken + (EVENT_ID ? '&eventId=' + EVENT_ID : '');
+  var canvas = document.getElementById('faceQrCanvas');
+  var status = document.getElementById('faceStatusMsg');
+  if (status) status.textContent = 'Scan QR with your phone';
+  // Draw QR using qrcode lib
+  if (typeof QRCode !== 'undefined' && canvas) {
+    try {
+      QRCode.toCanvas(canvas, uploadUrl, { width: 76, margin: 1, color: { dark: '#1a1a1a', light: '#ffffff' } }, function(err) {
+        if (err && status) status.textContent = 'QR error';
+      });
+    } catch(e) { if (status) status.textContent = 'QR unavailable'; }
+  } else if (status) { status.textContent = 'Loading QR lib…'; }
+  // Poll server for face match result
+  _facePollCount = 0;
+  _facePoll = setInterval(pollFaceResult, 2500);
+}
+
+function stopFaceUploadPoll() {
+  if (_facePoll) { clearInterval(_facePoll); _facePoll = null; }
+}
+
+async function pollFaceResult() {
+  if (!_faceToken) return;
+  _facePollCount++;
+  var status = document.getElementById('faceStatusMsg');
+  // Timeout after ~2 min
+  if (_facePollCount > 48) {
+    stopFaceUploadPoll();
+    if (status) status.textContent = 'Timed out — tap ↻ to retry';
+    return;
+  }
+  try {
+    var r = await fetch(BASE + '/api/face/result?token=' + _faceToken);
+    if (!r.ok) return; // not ready yet
+    var data = await r.json();
+    if (data.pending) return; // waiting for mobile upload
+    if (data && data.sessionIds && data.sessionIds.length > 0) {
+      stopFaceUploadPoll();
+      S.filtered = S.all.filter(function(s) {
+        return data.sessionIds.indexOf(s.id) >= 0 || data.sessionIds.indexOf(s.series_id) >= 0;
+      });
+      renderThumbs(S.filtered);
+      if (S.filtered.length) {
+        selectItem(0);
+        if (status) status.textContent = S.filtered.length + ' match' + (S.filtered.length > 1 ? 'es' : '') + ' found';
+        toast(S.filtered.length + ' face match(es) found', 'ok');
+        // Auto-switch to viewer to show results
+        setScreen('viewer');
+      } else {
+        showEmpty('No matching faces found');
+        if (status) status.textContent = 'No matches — try again';
+      }
+    } else if (data && data.uploaded) {
+      if (status) status.textContent = 'Photo received — searching…';
+    }
+  } catch(e) { /* network error, keep polling */ }
+}
+
+// ── Logo Settings ──
+var logoSettings = { align: 'left', size: 60 };
+
+function initLogoSettings() {
+  var stored = localStorage.getItem('logoSettings');
+  if (stored) { try { logoSettings = Object.assign(logoSettings, JSON.parse(stored)); } catch(_) {} }
+  var stored2 = localStorage.getItem('logoDataUrl');
+  if (stored2) {
+    var img = document.getElementById('logoImg');
+    if (img) { img.src = stored2; img.style.display = 'block'; }
+  }
+  applyLogoSettings();
+}
+
+function applyLogoSettings() {
+  var bar = document.getElementById('logoBar');
+  var img = document.getElementById('logoImg');
+  if (bar) {
+    bar.className = '';
+    bar.classList.add('align-' + (logoSettings.align || 'left'));
+  }
+  if (img) { img.style.height = (logoSettings.size || 60) + 'px'; }
+  // Sync settings panel controls
+  var range = document.getElementById('logoSizeRange');
+  var val = document.getElementById('logoSizeVal');
+  if (range) range.value = logoSettings.size || 60;
+  if (val) val.textContent = (logoSettings.size || 60) + 'px';
+  ['left','center','right'].forEach(function(a) {
+    var b = document.getElementById('align' + a.charAt(0).toUpperCase() + a.slice(1));
+    if (b) b.classList.toggle('active', a === (logoSettings.align || 'left'));
+  });
+}
+
+function saveLogoSettings() {
+  localStorage.setItem('logoSettings', JSON.stringify(logoSettings));
+}
+
+function onLogoFileChange(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var dataUrl = e.target.result;
+    localStorage.setItem('logoDataUrl', dataUrl);
+    var img = document.getElementById('logoImg');
+    if (img) { img.src = dataUrl; img.style.display = 'block'; }
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearLogo() {
+  localStorage.removeItem('logoDataUrl');
+  var img = document.getElementById('logoImg');
+  if (img) { img.src = ''; img.style.display = 'none'; }
+}
+
+function setLogoAlign(align) {
+  logoSettings.align = align;
+  saveLogoSettings(); applyLogoSettings();
+}
+
+function onLogoSizeChange(val) {
+  logoSettings.size = parseInt(val);
+  saveLogoSettings(); applyLogoSettings();
+}
+
+// ── Settings Panel ──
+function openSettings() {
+  var p = document.getElementById('settingsPanel');
+  if (p) p.classList.add('open');
+  applyLogoSettings();
+}
+
+function closeSettings() {
+  var p = document.getElementById('settingsPanel');
+  if (p) p.classList.remove('open');
+}
+
+// ── Init ──
+(async function init() {
+  setLayout('16:9'); // landscape page always uses 16:9
+  await Promise.all([loadTheme(), loadSessions()]);
+  initWS();
+  initLogoSettings();
+  initResizable();
+  initThumbDrag();
+  // Default to Viewer mode
+  setScreen('viewer');
+  document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT') return;
+    if (document.getElementById('qrModal').classList.contains('open')) return;
+    if (e.key === 'ArrowLeft')  prevItem();
+    else if (e.key === 'ArrowRight') nextItem();
+  });
+})();
+
+// ── Theme ──
+async function loadTheme() {
+  try {
+    var R = EVENT_ID ? await fetch(BASE + '/api/events/' + EVENT_ID) : null;
+    var ev = R && R.ok ? ((await R.json()).data || (await R.clone().json())) : null;
+    var tid = (ev && (ev.theme_id || ev.themeId)) || 'premium-white-gold';
+    var t = THEMES[tid] || THEMES['premium-white-gold'];
+    document.documentElement.style.setProperty('--primary', t.p);
+    document.documentElement.style.setProperty('--primary-l', t.pl);
+    document.documentElement.style.setProperty('--bg-start', t.bg1);
+    document.documentElement.style.setProperty('--bg-end', t.bg2);
+    if (ev && ev.name) {
+      document.title = ev.name + ' — Photo Viewer';
+    }
+    // Use PhotoQR images when event delivery includes QR (qr or both)
+    var dm = ev && (ev.delivery_mode || ev.deliveryMode);
+    S.useQrPhoto = (dm === 'qr' || dm === 'both');
+    var cfg = await fetch(BASE + '/api/delivery/landing-config');
+    if (cfg.ok) {
+      var c = (await cfg.json()).data || await cfg.clone().json();
+      if (c && c.logoPath) {
+        var logoImg = document.getElementById('logoImg');
+        if (logoImg) {
+          logoImg.src = c.logoPath.startsWith('/') ? BASE + c.logoPath : c.logoPath;
+          logoImg.style.display = 'block';
+        }
+      }
+    }
+  } catch(e) {}
+
+  // Load viewer config (visibility settings from admin ViewerTab)
+  try {
+    if (EVENT_ID) {
+      var vc = await fetch(BASE + '/api/events/' + EVENT_ID + '/viewer-config');
+      if (vc.ok) {
+        var vcData = (await vc.json()).data || {};
+        applyViewerConfig(vcData);
+      }
+    }
+  } catch(e) {}
+}
+
+// ── Apply viewer config live (called on load + via postMessage from ViewerTab) ──
+function applyViewerConfig(d) {
+  // Handle multi-layout format: { layout, configs: { '16:9': {...}, '9:16': {...} } }
+  if (d && d.configs) {
+    // Landscape page always reads its own '16:9' config — ignore d.layout
+    d = Object.assign({}, d.configs['16:9'] || {}, { layout: '16:9' });
+  }
+  // Visibility toggles
+  var qb = document.getElementById('qrBox');
+  if (qb) {
+    qb.style.display = d.showQr === false ? 'none' : '';
+    // QR size (% of panel width)
+    if (d.qrSize != null) qb.style.width = d.qrSize + '%';
+  }
+  S.hideCode = d.showCode === false;
+  var pb = document.getElementById('printBtn');
+  if (pb) pb.style.display = d.showPrint === false ? 'none' : '';
+  var ds = document.getElementById('dockBtnSearch');
+  if (ds) ds.style.display = d.showSearch === false ? 'none' : '';
+  var tw2 = document.getElementById('thumbWrapper');
+  var hh = document.getElementById('hHandle');
+  var thumbHidden = d.showThumbStrip === false;
+  if (tw2) tw2.style.display = thumbHidden ? 'none' : '';
+  if (hh) hh.style.display = thumbHidden ? 'none' : '';
+  // Right panel width (landscape only)
+  if (d.rightPanelWidth != null && !document.body.classList.contains('portrait')) {
+    var rp = document.getElementById('rightPanel');
+    var mv = document.getElementById('masterView');
+    if (rp) rp.style.width = d.rightPanelWidth + 'px';
+    if (mv) mv.style.maxWidth = 'calc(100% - ' + (d.rightPanelWidth + 52) + 'px)';
+  }
+  // Master preview size (scale photo/video area)
+  if (d.masterSize != null) {
+    var mv2 = document.getElementById('masterView');
+    if (mv2) {
+      var mainImg = mv2.querySelector('#adSlot, #mainPhoto');
+      if (mainImg) mainImg.style.transform = 'scale(' + (d.masterSize / 100) + ')';
+      // Apply to both photo and video
+      var mp = document.getElementById('mainPhoto');
+      var vd = document.getElementById('mainVideo');
+      if (mp) { mp.style.maxWidth = d.masterSize + '%'; mp.style.maxHeight = d.masterSize + '%'; }
+      if (vd) { vd.style.maxWidth = d.masterSize + '%'; vd.style.maxHeight = d.masterSize + '%'; }
+    }
+  }
+  // Print button size
+  if (d.printSize != null) {
+    var pb2 = document.getElementById('printBtn');
+    if (pb2) {
+      pb2.style.transform = 'scale(' + (d.printSize / 100) + ')';
+      pb2.style.transformOrigin = 'center center';
+    }
+  }
+  // Thumbnail strip height
+  if (d.thumbHeight != null) {
+    var tw3 = document.getElementById('thumbWrapper');
+    if (tw3) tw3.style.height = d.thumbHeight + 'px';
+    var ts = document.getElementById('thumbStrip');
+    if (ts) ts.style.height = (d.thumbHeight - 8) + 'px';
+  }
+  // Brand text
+  if (d.brandText) { var bn = document.getElementById('brandName'); if (bn) bn.textContent = d.brandText; }
+  // Logo size + align — route through logoSettings so applyLogoSettings() stays in sync
+  if (d.logoSize != null) { logoSettings.size = d.logoSize; applyLogoSettings(); }
+  if (d.logoAlign) { logoSettings.align = d.logoAlign; applyLogoSettings(); }
+  // Layout
+  if (d.layout) {
+    if (d.layout === '9:16') setLayout('9:16');
+    else setLayout('16:9');
+  }
+}
+
+// ── Listen for live config updates from ViewerTab (postMessage) ──
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'viewer-config') {
+    applyViewerConfig(e.data.data);
+  }
+});
+
+// ══ Render Panel ══
+var _renderOverlayUrl = '';
+
+function openRenderPanel() {
+  document.getElementById('renderPanel').style.display = 'block';
+  loadRenderOverlayList();
+}
+function closeRenderPanel() {
+  document.getElementById('renderPanel').style.display = 'none';
+}
+function removeRenderOverlay() {
+  _renderOverlayUrl = '';
+  document.getElementById('rOverlayThumb').style.display = 'none';
+  document.getElementById('rOverlayImg').src = '';
+  loadRenderOverlayList();
+}
+async function uploadRenderOverlay(input) {
+  if (!input.files || !input.files[0] || !EVENT_ID) return;
+  var fd = new FormData();
+  fd.append('file', input.files[0]);
+  document.getElementById('rStatus').textContent = 'Uploading overlay…';
+  try {
+    var r = await fetch(BASE + '/api/events/' + EVENT_ID + '/setup-assets/ViewerOverlay', { method: 'POST', body: fd });
+    var j = await r.json();
+    if (j.success && j.data && j.data.url) {
+      _renderOverlayUrl = j.data.url;
+      document.getElementById('rOverlayImg').src = BASE + _renderOverlayUrl;
+      document.getElementById('rOverlayThumb').style.display = 'block';
+      document.getElementById('rStatus').textContent = 'Overlay uploaded ✓';
+      loadRenderOverlayList();
+    } else {
+      document.getElementById('rStatus').textContent = 'Upload failed';
+    }
+  } catch(e) { document.getElementById('rStatus').textContent = 'Upload error'; }
+  input.value = '';
+}
+async function loadRenderOverlayList() {
+  if (!EVENT_ID) return;
+  try {
+    var r = await fetch(BASE + '/api/events/' + EVENT_ID + '/setup-assets/ViewerOverlay');
+    var j = await r.json();
+    var list = document.getElementById('rOverlayList');
+    if (!list) return;
+    var items = (j.data || []);
+    if (items.length === 0) { list.innerHTML = '<div style="font-size:10px;color:#555;padding:2px 0;">No overlays uploaded</div>'; return; }
+    list.innerHTML = items.map(function(it, i) {
+      var active = _renderOverlayUrl === it.url ? 'background:#2c2c1a; border-color:#C9A24A;' : 'background:#242424; border-color:#383838;';
+      return '<div onclick="selectRenderOverlay(\'' + it.url + '\')" style="display:flex; align-items:center; gap:6px; padding:4px 6px; border-radius:5px; border:1px solid; cursor:pointer; margin-bottom:4px; ' + active + '">' +
+        '<img src="' + BASE + it.url + '" style="width:32px; height:20px; object-fit:cover; border-radius:3px;">' +
+        '<span style="font-size:10px; color:#ccc; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + it.name + '</span>' +
+        '</div>';
+    }).join('');
+  } catch(e) {}
+}
+function selectRenderOverlay(url) {
+  _renderOverlayUrl = url;
+  document.getElementById('rOverlayImg').src = BASE + url;
+  document.getElementById('rOverlayThumb').style.display = 'block';
+  document.getElementById('rStatus').textContent = '';
+  loadRenderOverlayList();
+}
+async function triggerRender() {
+  var sess = S.filtered && S.idx >= 0 ? S.filtered[S.idx] : null;
+  if (!sess) { document.getElementById('rStatus').textContent = '⚠ Select a photo first'; return; }
+  var seriesId = sess.series_id;
+  if (!seriesId) { document.getElementById('rStatus').textContent = '⚠ No series ID for this session'; return; }
+  var btn = document.getElementById('rBtn');
+  btn.disabled = true; btn.textContent = 'Rendering…';
+  document.getElementById('rStatus').textContent = 'Processing…';
+  try {
+    var body = {
+      eventId: EVENT_ID,
+      seriesId: seriesId,
+      frameMs: parseInt(document.getElementById('rFrameMs').value) || 250,
+      totalS:  parseInt(document.getElementById('rTotalS').value)  || 5,
+      random:  document.getElementById('rRandom').checked,
+      ratio:   document.getElementById('rRatio').value,
+      overlayUrl: _renderOverlayUrl || undefined,
+    };
+    var r = await fetch(BASE + '/api/sessions/render-clip', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    var j = await r.json();
+    if (j.success) {
+      document.getElementById('rStatus').textContent = 'Done ✓ — refreshing…';
+      setTimeout(loadSessions, 800);
+    } else {
+      document.getElementById('rStatus').textContent = 'Error: ' + (j.error || 'unknown');
+    }
+  } catch(e) {
+    document.getElementById('rStatus').textContent = 'Network error';
+  }
+  btn.disabled = false; btn.textContent = '▶  RENDER';
+}
+
+// ── Load Sessions ──
+async function loadSessions() {
+  setSkeleton(true);
+  if (!EVENT_ID) { showEmpty('Open with ?eventId=X'); return; }
+  try {
+    var r = await fetch(BASE + '/api/dashboard/sessions?eventId=' + EVENT_ID);
+    var j = await r.json();
+    S.all = (j.data || []).filter(function(s){ return s.rendered_image_path; });
+    S.hasVideos = S.all.some(function(s){ return !!s.clip_url; });
+    updateVideoToggle();
+    // Default = Video; fallback to Photo if this event has no clips at all
+    if (!S.hasVideos) setViewMode('photo');
+    applySearch();
+    if (S.all.length) toast(S.all.length + ' sessions', 'ok');
+  } catch(e) {
+    showEmpty('Failed to load sessions');
+    toast('Failed to load sessions', 'err');
+  }
+}
+
+// ── Search ──
+function applySearch() {
+  S.filtered = S.all.slice();
+  S.idx = S.filtered.length > 0 ? 0 : -1;
+  renderThumbs(S.filtered);
+  if (S.filtered.length) selectItem(0);
+  else showEmpty(S.all.length ? 'No results' : 'No photos yet');
+}
+
+function searchByCode() {
+  var v = (document.getElementById('codeInput').value || '').trim().toUpperCase();
+  if (v.length === 0) { applySearch(); return; }
+  if (!/^[A-Z0-9]{1,4}$/.test(v)) { toast('Enter 1-4 character code (A-Z, 0-9)', 'err'); return; }
+  S.filtered = S.all.filter(function(s) {
+    var sc = (s.session_code || '').toUpperCase();
+    if (sc === v) return true;
+    return sc.includes(v)
+        || (s.id || '').toUpperCase().includes(v)
+        || (s.series_id || '').toUpperCase().includes(v);
+  });
+  S.idx = -1;
+  renderThumbs(S.filtered);
+  if (S.filtered.length) selectItem(0);
+  else showEmpty('No session matching "' + esc(v) + '"');
+}
+
+function searchByTime() {
+  var from = document.getElementById('timeFrom').value;
+  var to = document.getElementById('timeTo').value;
+  var fromDt = from ? new Date(from) : null;
+  var toDt = to ? new Date(to) : new Date();
+  if (fromDt && fromDt > toDt) { toast('เวลาเริ่มต้องน้อยกว่าเวลาสิ้นสุด', 'err'); return; }
+  S.filtered = S.all.filter(function(s) {
+    var d = s.started_at ? new Date(s.started_at) : null;
+    if (!d) return false;
+    if (fromDt && d < fromDt) return false;
+    if (d > toDt) return false;
+    return true;
+  });
+  S.idx = -1;
+  renderThumbs(S.filtered);
+  if (S.filtered.length) selectItem(0);
+  else showEmpty('ไม่พบภาพในช่วงเวลาที่เลือก');
+}
+
+function toDatetimeLocal(d) {
+  var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
+  return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) +
+         'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+function fillTimeDefaults() {
+  fetch(BASE + '/api/health').then(function(r) { return r.json(); }).then(function(h) {
+    var startMs = Date.now() - (h.uptime * 1000);
+    document.getElementById('timeFrom').value = toDatetimeLocal(new Date(startMs));
+    document.getElementById('timeTo').value = toDatetimeLocal(new Date());
+  }).catch(function() {
+    var start = new Date(); start.setHours(0, 0, 0, 0);
+    document.getElementById('timeFrom').value = toDatetimeLocal(start);
+    document.getElementById('timeTo').value = toDatetimeLocal(new Date());
+  });
+}
+
+function resetTimeDefaults() {
+  fillTimeDefaults();
+  setTimeout(function() { searchByTime(); }, 200);
+}
+
+// Face index helpers
+function checkFaceIndexStatus() {
+  if (!EVENT_ID) return;
+  var statusEl = document.getElementById('faceIndexStatus');
+  fetch(BASE + '/api/face/index/status?eventId=' + EVENT_ID).then(function(r) { return r.json(); }).then(function(j) {
+    if (!j.success) return;
+    var d = j.data;
+    if (d.status === 'indexing') {
+      if (statusEl) statusEl.textContent = 'กำลัง index… (' + d.indexedPhotos + '/' + d.totalPhotos + ' รูป)';
+      setTimeout(checkFaceIndexStatus, 2000);
+    } else if (d.status === 'done') {
+      if (statusEl) statusEl.textContent = '✓ Index พร้อม — ' + d.totalFacesInDb + ' ใบหน้า';
+    } else {
+      if (statusEl) statusEl.textContent = 'ยังไม่ได้ index — กด Index ก่อนใช้งาน';
+    }
+  }).catch(function() {});
+}
+
+function indexFacePhotos() {
+  if (!EVENT_ID) { toast('ไม่มี event', 'err'); return; }
+  var btn = document.getElementById('faceIndexBtn');
+  var statusEl = document.getElementById('faceIndexStatus');
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.textContent = 'กำลังเริ่ม index…';
+  fetch(BASE + '/api/face/index?eventId=' + EVENT_ID, { method: 'POST' })
+    .then(function(r) { return r.json(); }).then(function(j) {
+      if (btn) btn.disabled = false;
+      if (j.success) { checkFaceIndexStatus(); }
+      else toast(j.error || 'Index failed', 'err');
+    }).catch(function(e) { if (btn) btn.disabled = false; toast('Index error: ' + e.message, 'err'); });
+}
+
+// searchByFace() — implemented in face-search.js
+
+// ── Select Item ──
+function selectItem(idx) {
+  if (idx < 0 || idx >= S.filtered.length) return;
+  S.idx = idx;
+  displayItem(idx);
+  updateNavBtns();
+  highlightThumb(idx);
+  loadQr(S.filtered[idx]);
+  updateSessionInfo(S.filtered[idx]);
+  document.getElementById('printBtn').disabled = false;
+}
+
+function displayItem(idx) {
+  var s = S.filtered[idx];
+  var photoEl = document.getElementById('masterPhoto');
+  var videoEl = document.getElementById('masterVideo');
+  var img = document.getElementById('mainImg');
+  var vid = document.getElementById('mainVid');
+  setSkeleton(false); setEmpty(false);
+  photoEl.style.display = 'none'; videoEl.style.display = 'none';
+  img.classList.remove('loaded');
+  if (S.viewMode === 'video' && s.clip_url) {
+    videoEl.style.display = 'flex';
+    vid.src = BASE + s.clip_url;
+    vid.autoplay = true; vid.loop = true; vid.muted = true;
+    vid.load(); vid.play().catch(function(){});
+    vid.onerror = function() { videoEl.style.display = 'none'; showPhotoEl(s); };
+  } else { showPhotoEl(s); }
+}
+
+function showPhotoEl(s) {
+  var photoEl = document.getElementById('masterPhoto');
+  var img = document.getElementById('mainImg');
+  setSkeleton(true); photoEl.style.display = 'flex';
+  img.classList.remove('loaded');
+  img.onload  = function() { setSkeleton(false); img.classList.add('loaded'); };
+  img.onerror = function() { setSkeleton(false); img.classList.add('loaded'); };
+  // Use PhotoQR path if event delivery includes QR and photo_qr_path exists
+  var photoPath = (S.useQrPhoto && s.photo_qr_path) ? s.photo_qr_path : s.rendered_image_path;
+  img.src = BASE + '/api/photo-preview?path=' + encodeURIComponent(photoPath) + '&t=' + Date.now();
+}
+
+function setViewMode(mode) {
+  S.viewMode = mode;
+  var vtPhoto = document.getElementById('vtPhoto');
+  var vtVideo = document.getElementById('vtVideo');
+  if (vtPhoto) vtPhoto.classList.toggle('active', mode === 'photo');
+  if (vtVideo) vtVideo.classList.toggle('active', mode === 'video');
+  if (S.idx >= 0) displayItem(S.idx);
+  updateDockState();
+}
+
+function updateVideoToggle() {
+  var vBtn = document.getElementById('vtVideo');
+  if (vBtn) {
+    if (!S.hasVideos) { vBtn.disabled = true; vBtn.title = 'No clips available'; }
+    else { vBtn.disabled = false; vBtn.title = ''; }
+  }
+  // Disable dock video button when no clips available
+  var dV = document.getElementById('dockBtnVideo');
+  if (dV) { dV.disabled = !S.hasVideos; dV.style.opacity = S.hasVideos ? '' : '0.3'; }
+}
+
+function updateSessionInfo(s) {
+  var t = document.getElementById('sessionTime');
+  var i = document.getElementById('sessionId');
+  if (s.started_at) {
+    try { t.textContent = new Date(s.started_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+    catch(e) { t.textContent = ''; }
+  } else { t.textContent = ''; }
+  var code = (s.session_code && !S.hideCode) ? '#' + s.session_code : '';
+  i.textContent = code;
+}
+
+function updateNavBtns() {
+  /* nav arrows removed — thumbnails only */
+}
+
+// ── Left Dock ──
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(function(){});
+    var btn = document.getElementById('dockBtnFullscreen');
+    if (btn) btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 13 13" fill="none"><polyline points="4,1 1,1 1,4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><polyline points="12,4 12,1 9,1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><polyline points="9,12 12,12 12,9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><polyline points="1,9 1,12 4,12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  } else {
+    document.exitFullscreen().catch(function(){});
+    var btn = document.getElementById('dockBtnFullscreen');
+    if (btn) btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 13 13" fill="none"><polyline points="1,4 1,1 4,1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><polyline points="9,1 12,1 12,4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><polyline points="12,9 12,12 9,12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><polyline points="4,12 1,12 1,9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  }
+}
+document.addEventListener('fullscreenchange', function() {
+  if (!document.fullscreenElement) {
+    var btn = document.getElementById('dockBtnFullscreen');
+    if (btn) btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 13 13" fill="none"><polyline points="1,4 1,1 4,1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><polyline points="9,1 12,1 12,4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><polyline points="12,9 12,12 9,12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><polyline points="4,12 1,12 1,9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  }
+});
+
+function toggleDock() {
+  var dock = document.getElementById('leftDock');
+  var btn = document.getElementById('dockToggleBtn');
+  if (!dock) return;
+  dock.classList.toggle('dock-hidden');
+  if (btn) btn.textContent = dock.classList.contains('dock-hidden') ? '›' : '‹';
+}
+
+function hideDock() {
+  var dock = document.getElementById('leftDock');
+  var btn = document.getElementById('dockToggleBtn');
+  if (!dock) return;
+  dock.classList.add('dock-hidden');
+  if (btn) btn.textContent = '›';
+  // Also hide size panel
+  var sp = document.getElementById('sizePanel');
+  if (sp) sp.style.display = 'none';
+}
+
+// ── Size Controls ──
+function toggleSizePanel() {
+  var sp = document.getElementById('sizePanel');
+  if (!sp) return;
+  sp.style.display = sp.style.display === 'none' ? 'block' : 'none';
+}
+
+function setMasterSize(val) {
+  var mv = document.getElementById('masterView');
+  if (mv) mv.style.transform = 'scale(' + (val / 100) + ')';
+  if (mv) mv.style.transformOrigin = 'center center';
+  var v = document.getElementById('masterSizeVal');
+  if (v) v.textContent = val + '%';
+}
+
+function setPrintSize(val) {
+  var pc = document.getElementById('printCard');
+  if (pc) pc.style.transform = 'scale(' + (val / 100) + ')';
+  if (pc) pc.style.transformOrigin = 'center center';
+  var v = document.getElementById('printSizeVal');
+  if (v) v.textContent = val + '%';
+}
+
+function setThumbSize(val) {
+  var tw = document.getElementById('thumbWrapper');
+  if (tw) tw.style.transform = 'scale(' + (val / 100) + ')';
+  if (tw) tw.style.transformOrigin = 'center center';
+  var v = document.getElementById('thumbSizeVal');
+  if (v) v.textContent = val + '%';
+}
+
+// If embedded in iframe (ViewerTab preview), keep dock always open
+var _inIframe = (window.self !== window.top);
+
+function dockAction(fn) {
+  fn();
+  if (!_inIframe) hideDock(); // in iframe preview, keep dock open so buttons stay clickable
+}
+
+// ── Inline Search (Dock icons → Master View overlay) ──
+var _searchMode = null; // null = photo mode, 'code'|'time'|'face' = search mode
+var _faceCamStream = null;
+
+function toggleSearchInline(mode) {
+  var masterSearch = document.getElementById('masterSearch');
+  var masterPhoto = document.getElementById('masterPhoto');
+  var masterVideo = document.getElementById('masterVideo');
+  var title = document.getElementById('searchInlineTitle');
+  var titles = { code: 'Code Search', time: 'Time Search', face: 'Face Search' };
+
+  // Toggle off if same mode clicked again
+  if (_searchMode === mode) {
+    _searchMode = null;
+    masterSearch.style.display = 'none';
+    masterPhoto.style.opacity = '1';
+    masterVideo.style.opacity = '1';
+    stopFaceCam();
+    if (window._facePoll) clearInterval(window._facePoll);
+    updateDockSearchIcons();
+    return;
+  }
+
+  _searchMode = mode;
+  masterSearch.style.display = 'flex';
+  masterPhoto.style.opacity = '0';
+  masterVideo.style.opacity = '0';
+  title.textContent = titles[mode] || 'Search';
+  title.style.display = mode === 'face' ? 'none' : '';
+
+  // Show correct sub-panel
+  document.getElementById('inlineCode').style.display = mode === 'code' ? 'flex' : 'none';
+  document.getElementById('inlineTime').style.display = mode === 'time' ? 'flex' : 'none';
+  document.getElementById('inlineFace').style.display = mode === 'face' ? 'flex' : 'none';
+  // Hide Search/Close buttons in Face mode (Face has its own Snap button)
+  var actionBtns = document.getElementById('searchActionBtns');
+  if (actionBtns) actionBtns.style.display = mode === 'face' ? 'none' : 'flex';
+
+  // Clear previous results display
+  var res = document.getElementById('inlineSearchResult');
+  if (res) res.textContent = '';
+
+  // Time: auto-detect multi-day
+  if (mode === 'time') {
+    var dates = new Set();
+    S.all.forEach(function(s) { if (s.started_at) dates.add(s.started_at.slice(0,10)); });
+    var dateRow = document.getElementById('inlineDateRow');
+    if (dateRow) {
+      dateRow.style.display = dates.size > 1 ? 'block' : 'none';
+      if (dates.size > 1) {
+        var picker = document.getElementById('inlineDatePicker');
+        if (picker && !picker.value) picker.value = Array.from(dates).sort().pop(); // latest date
+      }
+    }
+  }
+
+  // Focus code input
+  if (mode === 'code') {
+    var inp = document.getElementById('inlineCodeInput');
+    if (inp) setTimeout(function() { inp.focus(); }, 100);
+  }
+
+  // Stop webcam if switching away from face
+  if (mode !== 'face') stopFaceCam();
+
+  // Generate face QR + start webcam
+  if (mode === 'face') {
+    if (window._facePoll) clearInterval(window._facePoll);
+    var token = Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+    var faceUrl = BASE + '/face-upload/index.html?token=' + token + '&eventId=' + EVENT_ID;
+    // Store URL for QR — will be drawn when QR tab is shown
+    window._faceQrUrl = faceUrl;
+    // Start webcam (may fail on HTTP+LAN — safe to ignore)
+    try { startFaceCam(); } catch(e) { console.warn('[FaceSearch] Camera unavailable:', e.message); }
+    var faceStatus = document.getElementById('inlineFaceStatus');
+    if (faceStatus) faceStatus.textContent = 'Waiting for selfie...';
+
+    // Poll for face result
+    // API returns: { success: true, sessionIds: string[], uploaded: true }
+    window._facePoll = setInterval(async function() {
+      try {
+        var r = await fetch(BASE + '/api/face/result?token=' + token);
+        if (!r.ok) return;
+        var d = await r.json();
+        if (d.pending) return; // waiting for mobile upload
+        // Accept both formats: d.sessionIds (actual API) or d.data.results (legacy)
+        var ids = d.sessionIds || (d.data && d.data.results) || null;
+        if (ids && Array.isArray(ids)) {
+          clearInterval(window._facePoll);
+          // ids can be string[] (sessionIds) or object[] (with sessionId/distance)
+          var matchIds = {};
+          ids.forEach(function(m) {
+            if (typeof m === 'string') { matchIds[m] = 0; }
+            else { matchIds[m.sessionId || m.series_id || m] = m.distance || 0; }
+          });
+          S.filtered = S.all.filter(function(s) { return matchIds[s.id] !== undefined || matchIds[s.series_id] !== undefined; });
+          S.filtered.sort(function(a,b) { return (matchIds[a.id]||matchIds[a.series_id]||999) - (matchIds[b.id]||matchIds[b.series_id]||999); });
+          S.idx = 0;
+          renderThumbs(S.filtered);
+          if (S.filtered.length > 0) {
+            selectItem(0);
+            // Auto close search after face match
+            _searchMode = null;
+            masterSearch.style.display = 'none';
+            masterPhoto.style.opacity = '1';
+            masterVideo.style.opacity = '1';
+            updateDockSearchIcons();
+          }
+          if (faceStatus) faceStatus.textContent = S.filtered.length + ' match(es) found!';
+          var resEl = document.getElementById('inlineSearchResult');
+          if (resEl) resEl.textContent = S.filtered.length + ' match(es)';
+        }
+      } catch(e) {}
+    }, 2500);
+  }
+
+  updateDockSearchIcons();
+}
+
+function updateDockSearchIcons() {
+  ['dockBtnCode','dockBtnTime','dockBtnFace'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.classList.toggle('active', _searchMode === id.replace('dockBtn','').toLowerCase());
+  });
+}
+
+function execInlineSearch(modeOverride) {
+  var mode = modeOverride || _searchMode;
+  if (!mode) return;
+
+  if (mode === 'code') {
+    var code = (document.getElementById('inlineCodeInput').value || '').trim();
+    if (!code) return;
+    S.filtered = S.all.filter(function(s) {
+      return (s.session_code || '').toUpperCase() === code.toUpperCase();
+    });
+  } else if (mode === 'time') {
+    var start = document.getElementById('inlineTimeStart').value;
+    var datePicker = document.getElementById('inlineDatePicker');
+    var dateVal = datePicker ? datePicker.value : '';
+    if (!start) { S.filtered = S.all.slice(); }
+    else {
+      S.filtered = S.all.filter(function(s) {
+        var sa = s.started_at || '';
+        // Filter by date if multi-day
+        if (dateVal && sa.slice(0,10) !== dateVal) return false;
+        // Filter by start time onwards
+        var t = sa.slice(11,16);
+        return t >= start;
+      });
+      // Sort by time ascending
+      S.filtered.sort(function(a,b) { return (a.started_at||'').localeCompare(b.started_at||''); });
+    }
+  }
+  // face mode handled via QR poll above
+
+  S.idx = 0;
+  renderThumbs(S.filtered);
+  if (S.filtered.length > 0) selectItem(0);
+  var res = document.getElementById('inlineSearchResult');
+  if (res) res.textContent = S.filtered.length + ' result(s)';
+}
+
+function setFaceMode(mode) {
+  var camBtn = document.getElementById('faceModeCam');
+  var qrBtn = document.getElementById('faceModeQr');
+  var snapView = document.getElementById('faceSnapView');
+  var qrView = document.getElementById('faceQrView');
+  if (mode === 'cam') {
+    camBtn.style.background = 'var(--primary)'; camBtn.style.color = '#fff';
+    qrBtn.style.background = 'transparent'; qrBtn.style.color = '#888';
+    snapView.style.display = 'flex'; qrView.style.display = 'none';
+    startFaceCam();
+  } else {
+    qrBtn.style.background = 'var(--primary)'; qrBtn.style.color = '#fff';
+    camBtn.style.background = 'transparent'; camBtn.style.color = '#888';
+    snapView.style.display = 'none'; qrView.style.display = 'flex';
+    // Keep camera stream alive — just hide the view (no re-prompt when switching back)
+    // Draw QR after canvas is visible in DOM
+    var qrCanvas = document.getElementById('inlineFaceQr');
+    var qrUrl = window._faceQrUrl;
+    if (qrCanvas && qrUrl && typeof QRCode !== 'undefined') {
+      requestAnimationFrame(function() {
+        QRCode.toCanvas(qrCanvas, qrUrl, { width: 250, margin: 2, color: { dark: '#1a1a1a', light: '#ffffff' } }, function(err) {
+          if (err) console.error('[FaceQR] Draw error:', err);
+        });
+      });
+    } else {
+      console.warn('[FaceQR] Missing:', !qrCanvas ? 'canvas' : '', !qrUrl ? 'url' : '', typeof QRCode === 'undefined' ? 'QRCode lib' : '');
+    }
+  }
+}
+
+function startFaceCam() {
+  var vid = document.getElementById('faceCamVid');
+  if (!vid) return;
+  // Reuse existing stream — no re-prompt if already granted
+  if (_faceCamStream && _faceCamStream.active) {
+    vid.srcObject = _faceCamStream;
+    return;
+  }
+  // Check secure context — mediaDevices requires HTTPS or localhost
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    var isInsecure = location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
+    var statusEl = vid.parentElement && vid.parentElement.querySelector('.face-cam-status');
+    if (!statusEl) {
+      statusEl = document.createElement('div');
+      statusEl.className = 'face-cam-status';
+      statusEl.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:16px;font-size:12px;color:#92400E;background:rgba(255,251,235,0.97);border-radius:8px;line-height:1.6;gap:10px;';
+      vid.parentElement.style.position = 'relative';
+      vid.parentElement.appendChild(statusEl);
+    }
+    if (isInsecure) {
+      var httpsHref = getHttpsUrl();
+      statusEl.innerHTML = '<div>กล้องต้องการ HTTPS</div>' +
+        '<a href="' + httpsHref + '" target="_top" style="display:inline-block;padding:8px 18px;background:var(--primary,#C9A24A);color:#fff;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;">🔒 เปิด HTTPS Viewer</a>' +
+        '<div style="font-size:10px;color:#aaa;">หรือใช้ QR tab แทน</div>';
+    } else {
+      statusEl.innerHTML = 'Camera not available.<br/><b style="color:var(--primary)">→ Use QR tab to search by face</b>';
+    }
+    console.warn('[FaceSearch] Camera requires secure context');
+    return;
+  }
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 640, height: 480 }, audio: false })
+    .then(function(stream) { _faceCamStream = stream; vid.srcObject = stream; })
+    .catch(function(err) {
+      var msg = err.name === 'NotAllowedError' ? 'Camera permission denied — check browser settings' : 'Camera blocked';
+      var statusEl = vid.parentElement && vid.parentElement.querySelector('.face-cam-status');
+      if (!statusEl) {
+        statusEl = document.createElement('div');
+        statusEl.className = 'face-cam-status';
+        statusEl.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:12px;font-size:11px;color:#DC2626;background:rgba(255,255,255,0.9);border-radius:8px;';
+        vid.parentElement.style.position = 'relative';
+        vid.parentElement.appendChild(statusEl);
+      }
+      statusEl.textContent = msg;
+      console.warn('[FaceSearch] Camera error:', err.name, msg);
+    });
+}
+
+function stopFaceCam() {
+  // Only fully stop when leaving face mode — not when switching Snap/QR tabs
+  if (_faceCamStream) { _faceCamStream.getTracks().forEach(function(t) { t.stop(); }); _faceCamStream = null; }
+  var vid = document.getElementById('faceCamVid');
+  if (vid) vid.srcObject = null;
+}
+
+async function snapFaceSearch() {
+  var vid = document.getElementById('faceCamVid');
+  if (!vid || !_faceCamStream) return;
+  var c = document.createElement('canvas');
+  c.width = vid.videoWidth; c.height = vid.videoHeight;
+  var ctx = c.getContext('2d');
+  ctx.translate(c.width, 0); ctx.scale(-1, 1);
+  ctx.drawImage(vid, 0, 0);
+  var b64 = c.toDataURL('image/jpeg', 0.85).split(',')[1];
+
+  var faceStatus = document.getElementById('inlineFaceStatus');
+  if (faceStatus) faceStatus.textContent = 'Searching...';
+
+  try {
+    var r = await fetch(BASE + '/api/face/search?eventId=' + EVENT_ID, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: b64, threshold: 0.5 }),
+    });
+    var j = await r.json();
+    if (j.success && j.data && j.data.matches > 0) {
+      var matchIds = {};
+      j.data.results.forEach(function(m) { matchIds[m.sessionId || m.series_id] = m.distance || 0; });
+      S.filtered = S.all.filter(function(s) { return matchIds[s.id] || matchIds[s.series_id]; });
+      S.filtered.sort(function(a,b) { return (matchIds[a.id]||matchIds[a.series_id]||999) - (matchIds[b.id]||matchIds[b.series_id]||999); });
+      S.idx = 0;
+      renderThumbs(S.filtered);
+      if (S.filtered.length > 0) selectItem(0);
+      // Auto close search
+      _searchMode = null;
+      masterSearch.style.display = 'none';
+      document.getElementById('masterPhoto').style.opacity = '1';
+      document.getElementById('masterVideo').style.opacity = '1';
+      stopFaceCam();
+      updateDockSearchIcons();
+      if (faceStatus) faceStatus.textContent = j.data.matches + ' match(es) found!';
+    } else {
+      if (faceStatus) faceStatus.textContent = 'No matches found';
+    }
+  } catch(e) {
+    if (faceStatus) faceStatus.textContent = 'Error: ' + e.message;
+  }
+}
+
+function clearInlineSearch() {
+  S.filtered = S.all.slice();
+  S.idx = 0;
+  renderThumbs(S.filtered);
+  if (S.filtered.length > 0) selectItem(0);
+  _searchMode = null;
+  var ms = document.getElementById('masterSearch');
+  if (ms) ms.style.display = 'none';
+  var mp = document.getElementById('masterPhoto');
+  var mv = document.getElementById('masterVideo');
+  if (mp) mp.style.opacity = '1';
+  if (mv) mv.style.opacity = '1';
+  stopFaceCam();
+  if (window._facePoll) clearInterval(window._facePoll);
+  updateDockSearchIcons();
+  var res = document.getElementById('inlineSearchResult');
+  if (res) res.textContent = '';
+  var inp = document.getElementById('inlineCodeInput');
+  if (inp) inp.value = '';
+}
+
+function updateDockState() {
+  // Layout
+  var isPortrait = document.body.classList.contains('portrait');
+  var d169 = document.getElementById('dockBtn169');
+  var d916 = document.getElementById('dockBtn916');
+  if (d169) d169.classList.toggle('active', !isPortrait);
+  if (d916) d916.classList.toggle('active', isPortrait);
+  // View mode
+  var dP = document.getElementById('dockBtnPhoto');
+  var dV = document.getElementById('dockBtnVideo');
+  if (dP) dP.classList.toggle('active', S.viewMode === 'photo');
+  if (dV) dV.classList.toggle('active', S.viewMode === 'video');
+}
+
+
+function prevItem() { if (S.idx > 0) selectItem(S.idx - 1); }
+function nextItem() { if (S.idx < S.filtered.length - 1) selectItem(S.idx + 1); }
+
+// ── View helpers ──
+function setSkeleton(on) { document.getElementById('masterSkeleton').style.display = on ? 'flex' : 'none'; }
+function setEmpty(on, msg) {
+  var el = document.getElementById('masterEmpty');
+  el.style.display = on ? 'flex' : 'none';
+  if (msg) document.getElementById('emptyMsg').textContent = msg;
+}
+function showEmpty(msg) {
+  setSkeleton(false); setEmpty(true, msg || 'No photos');
+  document.getElementById('masterPhoto').style.display = 'none';
+  document.getElementById('masterVideo').style.display = 'none';
+  document.getElementById('printBtn').disabled = true;
+  resetQrPanel();
+}
+
+// ── QR Panel ──
+async function loadQr(session) {
+  resetQrPanel();
+  if (!session) return;
+  document.getElementById('qrLoading').style.display = 'flex';
+  try {
+    var r = await fetch(BASE + '/api/delivery/qr', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: session.id, filePath: session.rendered_image_path }),
+    });
+    if (!r.ok) throw new Error('QR API error');
+    var j = await r.json();
+    var url = (j.data || j).qrImageUrl;
+    if (!url) throw new Error('No QR URL');
+    S.downloadUrl = (j.data || j).downloadUrl || null;
+    var copyBtn = document.getElementById('copyLinkBtn');
+    if (copyBtn) copyBtn.disabled = !S.downloadUrl;
+    var img = document.getElementById('qrImg');
+    img.onload  = function() { document.getElementById('qrLoading').style.display = 'none'; img.style.display = 'block'; document.getElementById('qrPlaceholder').style.display = 'none'; };
+    img.onerror = function() { resetQrPanel(); };
+    img.src = url;
+  } catch(e) { resetQrPanel(); }
+}
+
+function resetQrPanel() {
+  document.getElementById('qrLoading').style.display = 'none';
+  document.getElementById('qrImg').style.display = 'none';
+  document.getElementById('qrImg').src = '';
+  document.getElementById('qrPlaceholder').style.display = 'flex';
+  S.downloadUrl = null;
+  var copyBtn = document.getElementById('copyLinkBtn');
+  if (copyBtn) copyBtn.disabled = true;
+}
+
+function copyDownloadLink() {
+  var url = S.downloadUrl;
+  if (!url) { toast('ไม่มีลิงก์', 'err'); return; }
+  var btn = document.getElementById('copyLinkBtn');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(function() {
+      toast('คัดลอกลิงก์แล้ว!', 'ok');
+      if (btn) { var orig = btn.innerHTML; btn.innerHTML = '✓ Copied!'; setTimeout(function() { btn.innerHTML = orig; }, 1500); }
+    }).catch(function() { fallbackCopy(url, btn); });
+  } else {
+    fallbackCopy(url, btn);
+  }
+}
+
+function fallbackCopy(text, btn) {
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+  document.body.appendChild(ta);
+  ta.focus(); ta.select();
+  try {
+    document.execCommand('copy');
+    toast('คัดลอกลิงก์แล้ว!', 'ok');
+    if (btn) { var orig = btn.innerHTML; btn.innerHTML = '✓ Copied!'; setTimeout(function() { btn.innerHTML = orig; }, 1500); }
+  } catch(e) { toast('Copy failed — ' + text, 'inf'); }
+  document.body.removeChild(ta);
+}
+
+// ── Print ──
+async function printCurrent() {
+  if (S.printing || S.idx < 0) return;
+  var s = S.filtered[S.idx];
+  if (!s) return;
+  S.printing = true;
+  var btn = document.getElementById('printBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="print-spin"></div>';
+  try {
+    var printers = [];
+    try { var pr = await fetch(BASE + '/api/delivery/printers'); if (pr.ok) printers = await pr.json(); } catch(e){}
+    var printerName = null;
+    if (printers.length === 1) printerName = printers[0].name || printers[0];
+    else if (printers.length > 1) {
+      var choice = prompt('Select printer:\n' + printers.map(function(p,i){ return i + ': ' + (p.name||p); }).join('\n'));
+      if (choice === null) { S.printing = false; btn.disabled = false; btn.innerHTML = '<span id="printLabel">Print</span>'; return; }
+      var n = parseInt(choice, 10);
+      printerName = (!isNaN(n) && printers[n]) ? (printers[n].name || printers[n]) : choice;
+    }
+    if (!printerName) { toast('No printer available', 'err'); return; }
+    var res = await fetch(BASE + '/api/delivery/print', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filePath: s.rendered_image_path, printerName: printerName, copies: 1 }),
+    });
+    var data = await res.json();
+    res.ok ? toast('Sent to ' + printerName, 'ok') : toast(data.error || 'Print failed', 'err');
+  } catch(e) { toast('Print failed', 'err'); }
+  finally {
+    S.printing = false; btn.disabled = false;
+    btn.innerHTML = '<span id="printLabel">Print</span>';
+  }
+}
+
+// ── Thumbnails ──
+function renderThumbs(sessions) {
+  var strip = document.getElementById('thumbStrip');
+  if (!sessions.length) { strip.innerHTML = '<div class="th-empty">No photos</div>'; updateThumbArrows(); return; }
+  var html = '';
+  sessions.forEach(function(s, i) {
+    var url = s.thumb_url ? BASE + s.thumb_url : BASE + '/api/photo-preview?path=' + encodeURIComponent(s.rendered_image_path);
+    var active = i === 0 ? ' active' : '';
+    html += '<div class="thumb' + active + '" onclick="selectItem(' + i + ')" data-i="' + i + '">'
+          + '<img src="' + url + '" alt="" loading="lazy" /></div>';
+  });
+  strip.innerHTML = html;
+  setTimeout(updateThumbArrows, 80);
+}
+
+function highlightThumb(idx) {
+  var thumbs = document.querySelectorAll('.thumb');
+  thumbs.forEach(function(t, i) { t.classList.toggle('active', i === idx); t.classList.remove('highlight'); });
+  var active = thumbs[idx];
+  if (active) active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+}
+
+function highlightThumbById(sessionId) {
+  var found = -1;
+  S.filtered.forEach(function(s, i) { if (s.id === sessionId) found = i; });
+  if (found >= 0) {
+    selectItem(found);
+    setTimeout(function() {
+      var t = document.querySelectorAll('.thumb')[found];
+      if (t) { t.classList.add('highlight'); setTimeout(function(){ t.classList.remove('highlight'); }, 1800); }
+    }, 100);
+    return true;
+  }
+  return false;
+}
+
+function scrollThumbs(dir) {
+  var strip = document.getElementById('thumbStrip');
+  strip.scrollBy({ left: dir * strip.clientWidth * 0.65, behavior: 'smooth' });
+  setTimeout(updateThumbArrows, 350);
+}
+
+function updateThumbArrows() {
+  var strip = document.getElementById('thumbStrip');
+  var L = document.getElementById('thScrollL'), R = document.getElementById('thScrollR');
+  if (!strip) return;
+  L.disabled = strip.scrollLeft <= 0;
+  R.disabled = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 2;
+}
+
+// ── QR Scan ──
+function toggleQrScan() {
+  var modal = document.getElementById('qrModal');
+  modal.classList.contains('open') ? stopQrScan() : startQrScan();
+}
+
+async function startQrScan() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    var isInsecure = location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
+    if (isInsecure) {
+      var httpsHref = getHttpsUrl();
+      toast('<a href="' + httpsHref + '" target="_top" style="color:#fff;font-weight:700;">🔒 เปิด HTTPS เพื่อใช้กล้อง</a>', 'err');
+    } else {
+      toast('Camera not available', 'err');
+    }
+    return;
+  }
+  try {
+    S.qrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    document.getElementById('qrVid').srcObject = S.qrStream;
+    document.getElementById('qrModal').classList.add('open');
+    var btn = document.getElementById('scanBtn');
+    if (btn) { btn.style.background = '#ef4444'; btn.style.color = '#fff'; btn.textContent = '⏹'; }
+    scanFrame();
+  } catch(e) { toast('Camera access denied', 'err'); }
+}
+
+function stopQrScan() {
+  if (S.qrAnim) { cancelAnimationFrame(S.qrAnim); S.qrAnim = null; }
+  if (S.qrStream) { S.qrStream.getTracks().forEach(function(t){ t.stop(); }); S.qrStream = null; }
+  document.getElementById('qrModal').classList.remove('open');
+  var btn = document.getElementById('scanBtn');
+  if (btn) { btn.style.background = '#f0f0f0'; btn.style.color = '#555'; btn.textContent = '📷'; }
+}
+
+function scanFrame() {
+  var vid = document.getElementById('qrVid');
+  if (!S.qrStream) return;
+  if (vid.readyState === vid.HAVE_ENOUGH_DATA && typeof jsQR !== 'undefined') {
+    var c = document.createElement('canvas');
+    c.width = vid.videoWidth; c.height = vid.videoHeight;
+    c.getContext('2d').drawImage(vid, 0, 0);
+    var d = c.getContext('2d').getImageData(0, 0, c.width, c.height);
+    var code = jsQR(d.data, d.width, d.height);
+    if (code && code.data) { handleQrResult(code.data); return; }
+  }
+  S.qrAnim = requestAnimationFrame(scanFrame);
+}
+
+async function handleQrResult(url) {
+  stopQrScan();
+  var m = url.match(/\/download\/([^/?#]+)/) || url.match(/\/qr\/([^/?#.]+)/);
+  var token = m ? m[1] : null;
+  if (!token) { toast('QR not recognized', 'err'); return; }
+  try {
+    var r = await fetch(BASE + '/api/delivery/page/' + token);
+    if (!r.ok) { toast('Session not found for this QR', 'err'); return; }
+    var j = await r.json();
+    var sid = j.sessionId || (j.data && j.data.sessionId);
+    if (!sid) { toast('Cannot resolve session from QR', 'err'); return; }
+    if (highlightThumbById(sid)) { toast('Session found!', 'ok'); return; }
+    var inAll = S.all.find(function(s){ return s.id === sid; });
+    if (inAll) { applySearch(); setTimeout(function(){ highlightThumbById(sid); }, 120); toast('Session found', 'ok'); }
+    else { toast('Session not found in this event', 'err'); }
+  } catch(e) { toast('QR lookup failed', 'err'); }
+}
+
+// ── Utils ──
+// ── Resizable thumbnail strip ──
+// ── Thumbnail drag-to-scroll ──
+function initThumbDrag() {
+  var strip = document.getElementById('thumbStrip');
+  if (!strip) return;
+  var dragging = false, startX = 0, scrollStart = 0, moved = false;
+  strip.addEventListener('mousedown', function(e) {
+    if (e.button !== 0) return;
+    dragging = true; moved = false;
+    startX = e.clientX;
+    scrollStart = strip.scrollLeft;
+    strip.classList.add('dragging');
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    var dx = e.clientX - startX;
+    if (Math.abs(dx) > 3) moved = true;
+    strip.scrollLeft = scrollStart - dx;
+  });
+  document.addEventListener('mouseup', function(e) {
+    if (!dragging) return;
+    dragging = false;
+    strip.classList.remove('dragging');
+    // If drag was significant, block the click on the thumb
+    if (moved) { e.stopPropagation(); setTimeout(function(){ moved = false; }, 50); }
+    setTimeout(updateThumbArrows, 80);
+  });
+  // Prevent click-select on thumbs after drag
+  strip.addEventListener('click', function(e) {
+    if (moved) { e.stopPropagation(); e.preventDefault(); }
+  }, true);
+}
+
+function initResizable() {
+  // ── Vertical handle: resize rightPanel width ──
+  var vHnd = document.getElementById('vHandle');
+  var rp = document.getElementById('rightPanel');
+  var mv = document.getElementById('masterView');
+  if (vHnd && rp) {
+    var vDragging = false, vStartX = 0, vStartW = 0;
+    function vDown(e) {
+      vDragging = true;
+      vStartX = (e.touches ? e.touches[0].clientX : e.clientX) || 0;
+      vStartW = rp.offsetWidth;
+      vHnd.classList.add('dragging');
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    }
+    function vMove(e) {
+      if (!vDragging) return;
+      var x = (e.touches ? e.touches[0].clientX : e.clientX) || 0;
+      var dx = vStartX - x; // drag left = wider, drag right = narrower
+      var newW = Math.min(800, Math.max(120, vStartW + dx));
+      rp.style.width = newW + 'px';
+      // In landscape mode masterView has fixed max-width — update it so it shrinks/expands
+      if (mv && document.body.classList.contains('enforce-169')) {
+        mv.style.maxWidth = 'calc(100% - ' + (newW + 52) + 'px)';
+      }
+    }
+    function vUp() {
+      vDragging = false;
+      vHnd.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+    vHnd.addEventListener('mousedown', vDown);
+    vHnd.addEventListener('touchstart', vDown, { passive: false });
+    document.addEventListener('mousemove', vMove);
+    document.addEventListener('touchmove', vMove, { passive: false });
+    document.addEventListener('mouseup', vUp);
+    document.addEventListener('touchend', vUp);
+  }
+
+  // ── rpHandle: resize qrCard / printCard ──
+  var rpHnd = document.getElementById('rpHandle');
+  var qrCard = document.getElementById('qrCard');
+  var printCard = document.getElementById('printCard');
+  if (rpHnd && qrCard && printCard) {
+    var rpDragging = false, rpStartY = 0, rpStartH = 0;
+    function rpDown(e) {
+      rpDragging = true;
+      rpStartY = (e.touches ? e.touches[0].clientY : e.clientY) || 0;
+      rpStartH = qrCard.offsetHeight;
+      rpHnd.classList.add('dragging');
+      document.body.style.cursor = 'ns-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    }
+    function rpMove(e) {
+      if (!rpDragging) return;
+      var y = (e.touches ? e.touches[0].clientY : e.clientY) || 0;
+      var dy = y - rpStartY;
+      var newH = Math.min(400, Math.max(80, rpStartH + dy));
+      qrCard.style.height = newH + 'px';
+      qrCard.style.overflow = 'hidden';
+    }
+    function rpUp() {
+      rpDragging = false;
+      rpHnd.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+    rpHnd.addEventListener('mousedown', rpDown);
+    rpHnd.addEventListener('touchstart', rpDown, { passive: false });
+    document.addEventListener('mousemove', rpMove);
+    document.addEventListener('touchmove', rpMove, { passive: false });
+    document.addEventListener('mouseup', rpUp);
+    document.addEventListener('touchend', rpUp);
+  }
+
+  // ── Horizontal handle: resize thumbWrapper height ──
+  var hHnd = document.getElementById('hHandle');
+  var tw = document.getElementById('thumbWrapper');
+  if (!hHnd || !tw) return;
+  var dragging = false, startY = 0, startH = 0;
+  function down(e) {
+    dragging = true; startY = e.clientY || (e.touches && e.touches[0] && e.touches[0].clientY) || 0;
+    startH = tw.offsetHeight;
+    hHnd.classList.add('dragging'); e.preventDefault();
+  }
+  function move(e) {
+    if (!dragging) return;
+    var y = e.clientY || (e.touches && e.touches[0] && e.touches[0].clientY) || 0;
+    var dy = startY - y;
+    var isPortrait = document.body.classList.contains('portrait');
+    var maxH = isPortrait ? 160 : 350;
+    var newH = Math.min(maxH, Math.max(60, startH + dy));
+    document.documentElement.style.setProperty('--th-h', newH + 'px');
+    tw.style.height = newH + 'px';
+  }
+  function up() { dragging = false; hHnd.classList.remove('dragging'); }
+  hHnd.addEventListener('mousedown', down);
+  hHnd.addEventListener('touchstart', down, { passive: false });
+  document.addEventListener('mousemove', move);
+  document.addEventListener('touchmove', move, { passive: false });
+  document.addEventListener('mouseup', up);
+  document.addEventListener('touchend', up);
+}
+
+function esc(s) { var d = document.createElement('div'); d.textContent = String(s||''); return d.innerHTML; }
+var _toastTimer = null;
+function toast(msg, type) {
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = type === 'ok' ? 'toast-ok' : type === 'err' ? 'toast-err' : 'toast-inf';
+  el.style.opacity = '1';
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(function(){ el.style.opacity = '0'; }, 3000);
+}
+</script>
+</body>
+</html>

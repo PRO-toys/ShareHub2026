@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Multi-Snap Booth - Your Photos</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <!-- Detect Firebase Hosting: any non-local hostname (covers .web.app, .firebaseapp.com, AND custom domains) -->
+  <script>
+    var isLocal = location.hostname === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(location.hostname);
+    if (!isLocal) {
+      window.__FIREBASE_HOSTING = true;
+    }
+  </script>
+  <!-- Firebase JS SDK (used only on Firebase Hosting) -->
+  <script type="module">
+    if (window.__FIREBASE_HOSTING) {
+      import('https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js').then(function(mod) {
+        window.__firebaseApp = mod;
+        return import('https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js');
+      }).then(function(mod) {
+        window.__firebaseFirestore = mod;
+        // Auto-init from Firebase Hosting reserved URL
+        return fetch('/__/firebase/init.json');
+      }).then(function(r) { return r.json(); }).then(function(config) {
+        window.__fbApp = window.__firebaseApp.initializeApp(config);
+        window.__fbDb = window.__firebaseFirestore.getFirestore(window.__fbApp);
+        window.__firebaseReady = true;
+        // Trigger init if page was waiting
+        if (window.__pendingInit) window.__pendingInit();
+      }).catch(function(e) {
+        console.warn('Firebase SDK init failed, falling back to local mode:', e);
+        window.__FIREBASE_HOSTING = false;
+        window.__firebaseReady = false;
+        // Trigger local init if page was waiting
+        if (window.__pendingInitLocal) window.__pendingInitLocal();
+      });
+    }
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      color: #1A1A1A;
+    }
+
+    .container {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 2rem 1.25rem 3rem;
+    }
+
+    /* Header */
+    .header { text-align: center; margin-bottom: 2rem; }
+    .header .logo { object-fit: contain; margin-bottom: 0.75rem; max-width: 80%; }
+    .header .brand {
+      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.3em;
+      text-transform: uppercase; margin-bottom: 0.5rem;
+      color: var(--theme-primary, #C9A24A);
+    }
+    .header h1 { font-size: 1.5rem; font-weight: 300; color: #1A1A1A; }
+    .header .sub { font-size: 0.85rem; color: #6B7280; margin-top: 0.25rem; }
+    .divider { width: 3rem; height: 1px; margin: 1rem auto; }
+
+    /* Media Card */
+    .media-card {
+      background: #FFFFFF; border-radius: 1rem; overflow: hidden;
+      margin-bottom: 1rem; box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    }
+    .media-card .media-wrap {
+      width: 100%; background: var(--theme-bg-end, #F5F0E6);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .media-card img, .media-card video {
+      width: 100%; display: block;
+    }
+    .media-card .card-footer {
+      padding: 0.75rem 1rem; display: flex;
+      align-items: center; justify-content: space-between;
+    }
+    .media-card .card-label { font-size: 0.8rem; color: #6B7280; font-weight: 500; }
+
+    /* Download Button */
+    .download-btn {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      padding: 0.5rem 1rem; color: #FFFFFF; border: none;
+      border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600;
+      cursor: pointer; text-decoration: none; transition: opacity 0.2s;
+      background: linear-gradient(135deg, var(--theme-primary, #C9A24A) 0%, var(--theme-primary-light, #E8D5A0) 50%, var(--theme-primary, #C9A24A) 100%);
+    }
+    .download-btn:active { opacity: 0.8; }
+    .download-btn svg { flex-shrink: 0; }
+
+    /* Download All */
+    .download-all {
+      display: block; width: 100%; padding: 1rem;
+      color: #FFFFFF; border: none; border-radius: 0.75rem;
+      font-size: 1rem; font-weight: 600; cursor: pointer;
+      text-align: center; text-decoration: none;
+      margin-top: 1.5rem; transition: opacity 0.2s;
+      background: linear-gradient(135deg, var(--theme-primary, #C9A24A) 0%, var(--theme-primary-light, #E8D5A0) 50%, var(--theme-primary, #C9A24A) 100%);
+    }
+    .download-all:active { opacity: 0.8; }
+
+    /* Share */
+    .share-row {
+      display: flex; justify-content: center; gap: 0.75rem;
+      margin-top: 1.25rem; margin-bottom: 0.5rem;
+    }
+    .share-btn {
+      width: 48px; height: 48px; border-radius: 50%; border: none;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: transform 0.15s;
+      color: #FFFFFF; font-weight: 700; font-size: 12px;
+    }
+    .share-btn:active { transform: scale(0.92); }
+    .share-btn.fb { background: #1877F2; }
+    .share-btn.line { background: #06C755; }
+    .share-btn.tw { background: #000000; }
+
+    /* Expired / Error */
+    .error-screen { text-align: center; padding: 4rem 1rem; }
+    .error-screen .icon { font-size: 3rem; margin-bottom: 1rem; }
+    .error-screen h2 { font-size: 1.2rem; color: #6B7280; margin-bottom: 0.5rem; }
+    .error-screen p { font-size: 0.9rem; color: #9CA3AF; }
+
+    /* Loading */
+    .loading { text-align: center; padding: 4rem 1rem; color: #9CA3AF; }
+    .spinner {
+      width: 2rem; height: 2rem; border: 2px solid #E5E7EB;
+      border-top-color: var(--theme-primary, #C9A24A);
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+      margin: 0 auto 1rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Footer */
+    .footer { text-align: center; margin-top: 2rem; font-size: 0.7rem; color: #D1D5DB; }
+  </style>
+</head>
+<body>
+  <div class="container" id="app">
+    <div class="loading" id="loadingState">
+      <div class="spinner"></div>
+      <p>Loading your photos...</p>
+    </div>
+  </div>
+
+  <script>
+    var token = window.location.pathname.split('/').pop();
+    var baseUrl = window.location.origin;
+    var landingCfg = null;
+    var pageData = null; // store delivery data for share functions
+
+    // Booth theme color map — synced from apps/booth/src/styles/themes.ts
+    var BOOTH_THEMES = {
+      'premium-white-gold':   { primary: '#C9A24A', primaryLight: '#E8D5A0', bgStart: '#FAFAF8', bgEnd: '#F5F0E6' },
+      'premium-white-silver': { primary: '#8E8E93', primaryLight: '#C7C7CC', bgStart: '#FAFAFA', bgEnd: '#F0F0F5' },
+      'wedding':              { primary: '#C9979E', primaryLight: '#E8C5C9', bgStart: '#FFF9F9', bgEnd: '#F5EAEB' },
+      'fusion':               { primary: '#8B5CF6', primaryLight: '#C4B5FD', bgStart: '#FAFAFF', bgEnd: '#F0EAFA' },
+      'apple-minimal':        { primary: '#1D1D1F', primaryLight: '#86868B', bgStart: '#FFFFFF', bgEnd: '#F5F5F7' },
+      'party-time':           { primary: '#FF6B35', primaryLight: '#FFB088', bgStart: '#FFFAF8', bgEnd: '#FFF0E8' },
+    };
+
+    if (token) {
+      // If on Firebase Hosting, wait for Firebase SDK to load, then use Firestore
+      if (window.__FIREBASE_HOSTING) {
+        window.__pendingInit = function() { initCloud(token); };
+        // If SDK already loaded (race condition), run immediately
+        if (window.__firebaseReady) initCloud(token);
+      } else {
+        init(token);
+      }
+    } else {
+      showError('Invalid link', 'This download link is not valid.');
+    }
+
+    /** Cloud mode: fetch delivery data from Firestore (public read) */
+    /** Retries automatically if doc not yet available (cloud sync in progress) */
+    var CLOUD_MAX_RETRIES = 8;
+    var CLOUD_RETRY_DELAY = 2000; // 2 seconds between retries
+
+    async function initCloud(t, attempt) {
+      attempt = attempt || 1;
+      try {
+        var db = window.__fbDb;
+        var fs = window.__firebaseFirestore;
+        var docRef = fs.doc(db, 'deliveries', t);
+        var snap = await fs.getDoc(docRef);
+        if (!snap.exists()) {
+          if (attempt <= CLOUD_MAX_RETRIES) {
+            showProcessing(attempt);
+            await new Promise(function(r) { setTimeout(r, CLOUD_RETRY_DELAY); });
+            return initCloud(t, attempt + 1);
+          }
+          applyTheme();
+          showError('Not Found', 'This download link is no longer available.');
+          return;
+        }
+        var doc = snap.data();
+
+        // ── Hybrid: try local server first (fast LAN delivery) ──
+        if (doc.localServerIp) {
+          var localBase = 'http://' + doc.localServerIp + ':' + (doc.localServerPort || 3000);
+          try {
+            var ctrl = new AbortController();
+            var timeout = setTimeout(function() { ctrl.abort(); }, 2500);
+            var localRes = await fetch(localBase + '/api/delivery/page/' + t, { signal: ctrl.signal });
+            clearTimeout(timeout);
+            if (localRes.ok) {
+              var localData = await localRes.json();
+              console.log('[Hybrid] Using LOCAL server for fast delivery');
+              // Notify server that photo was delivered (for MikroTik kick)
+              try { navigator.sendBeacon(localBase + '/api/delivery/done', JSON.stringify({ token: t })); } catch(e) {}
+              applyTheme(localData.themeId);
+              await renderPage(localData);
+              return;
+            }
+          } catch (e) {
+            console.log('[Hybrid] Local server unreachable, falling back to cloud');
+          }
+        }
+
+        // ── Cloud fallback ──
+        var data = {
+          photoUrl: doc.photoUrl || null,
+          photoDownloadUrl: doc.photoUrl || null,
+          photoQrUrl: doc.photoQrUrl || null,
+          photoQrDownloadUrl: doc.photoQrUrl || null,
+          clipUrl: doc.clipUrl || null,
+          clipDownloadUrl: doc.clipUrl || null,
+          locationType: 'cloud',
+          themeId: doc.themeId || 'premium-white-gold',
+          eventId: doc.eventId || '',
+          downloadUrl: window.location.href,
+        };
+        applyTheme(data.themeId);
+        await renderPage(data);
+      } catch (e) {
+        console.error('Firestore fetch error:', e);
+        if (attempt <= CLOUD_MAX_RETRIES) {
+          showProcessing(attempt);
+          await new Promise(function(r) { setTimeout(r, CLOUD_RETRY_DELAY); });
+          return initCloud(t, attempt + 1);
+        }
+        applyTheme();
+        showError('Connection Error', 'Could not load your photos. Please try again.');
+      }
+    }
+
+    function showProcessing(attempt) {
+      var app = document.getElementById('app');
+      app.innerHTML = '<div class="loading">' +
+        '<div class="spinner"></div>' +
+        '<p style="font-size:1rem;color:#374151;font-weight:500;margin-bottom:0.25rem">Processing your photos...</p>' +
+        '<p style="font-size:0.8rem;color:#9CA3AF">Please wait a moment</p>' +
+        '</div>';
+    }
+
+    /** Local mode: fetch from Express API */
+    async function init(t) {
+      // Load landing config + delivery data in parallel
+      var results = await Promise.allSettled([
+        fetch(baseUrl + '/api/delivery/landing-config').then(function(r) { return r.ok ? r.json() : null; }),
+        fetch(baseUrl + '/api/delivery/page/' + t).then(function(r) {
+          if (!r.ok) {
+            var status = r.status;
+            return r.json().catch(function() { return {}; }).then(function(e) {
+              return { _error: true, status: status, msg: e.error };
+            });
+          }
+          return r.json();
+        }),
+      ]);
+
+      // Parse landing config
+      var cfgResult = results[0];
+      if (cfgResult.status === 'fulfilled' && cfgResult.value && cfgResult.value.data) {
+        landingCfg = cfgResult.value.data;
+      }
+      // Parse delivery data first to get themeId
+      var dataResult = results[1];
+      if (dataResult.status === 'rejected') {
+        applyTheme();
+        showError('Connection Error', 'Could not reach the server. Make sure you are on the same network.');
+        return;
+      }
+      var data = dataResult.value;
+      if (data && data._error) {
+        applyTheme();
+        if (data.status === 410) {
+          showError('Link Expired', 'This download link has expired. Please scan a new QR code.');
+        } else {
+          showError('Not Found', data.msg || 'This download link is no longer available.');
+        }
+        return;
+      }
+      applyTheme(data.themeId);
+      await renderPage(data);
+    }
+
+    function applyTheme(themeId) {
+      var c = landingCfg || {};
+      // Use booth theme colors if themeId provided, otherwise fall back to landing config
+      var bt = themeId && BOOTH_THEMES[themeId] ? BOOTH_THEMES[themeId] : null;
+      activeBoothTheme = bt;
+      var primary = bt ? bt.primary : (c.primaryColor || '#C9A24A');
+      var bgStart = bt ? bt.bgStart : (c.bgGradientStart || '#FAFAF8');
+      var bgEnd = bt ? bt.bgEnd : (c.bgGradientEnd || '#F5F0E6');
+      document.body.style.background = 'linear-gradient(165deg, ' + bgStart + ' 0%, ' + bgEnd + ' 100%)';
+      var primaryLight = bt ? bt.primaryLight : lightenHex(primary, 40);
+      document.documentElement.style.setProperty('--theme-bg-end', bgEnd);
+      document.documentElement.style.setProperty('--theme-primary', primary);
+      document.documentElement.style.setProperty('--theme-primary-light', primaryLight);
+      var sp = document.querySelector('.spinner');
+      if (sp) sp.style.borderTopColor = primary;
+      // Load custom Google Font if set
+      var hFont = c.headlineFont || '';
+      if (hFont && ['Playfair Display','Montserrat','Prompt','Sarabun'].indexOf(hFont) !== -1) {
+        var link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = 'https://fonts.googleapis.com/css2?family=' + hFont.replace(/ /g, '+') + ':wght@300;400;600;700&display=swap';
+        document.head.appendChild(link);
+      }
+    }
+
+    var activeBoothTheme = null; // set by applyTheme()
+
+    function cfg(key, fallback) {
+      // For color keys, prefer booth theme colors
+      if (activeBoothTheme) {
+        if (key === 'primaryColor') return activeBoothTheme.primary;
+        if (key === 'bgGradientStart') return activeBoothTheme.bgStart;
+        if (key === 'bgGradientEnd') return activeBoothTheme.bgEnd;
+      }
+      if (!landingCfg) return fallback;
+      return landingCfg[key] !== undefined && landingCfg[key] !== null ? landingCfg[key] : fallback;
+    }
+
+    function primaryGradient() {
+      var p = cfg('primaryColor', '#C9A24A');
+      var light = activeBoothTheme ? activeBoothTheme.primaryLight : lightenHex(p, 40);
+      return 'linear-gradient(135deg, ' + p + ' 0%, ' + light + ' 50%, ' + p + ' 100%)';
+    }
+
+    async function renderPage(data) {
+      pageData = data;
+      // Track page view
+      var t = window.location.pathname.split('/').pop();
+      try { fetch('/api/delivery/analytics', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ token: t, eventId: data.eventId, eventType: 'page_view', deviceType: /Mobile|Android/i.test(navigator.userAgent)?'mobile':/iPad|Tablet/i.test(navigator.userAgent)?'tablet':'desktop', os: /iPhone|iPad/.test(navigator.userAgent)?'iOS':/Android/.test(navigator.userAgent)?'Android':/Win/.test(navigator.platform)?'Windows':/Mac/.test(navigator.platform)?'Mac':'other', browser: /Chrome/.test(navigator.userAgent)?'Chrome':/Safari/.test(navigator.userAgent)?'Safari':/Firefox/.test(navigator.userAgent)?'Firefox':'other', screenSize: screen.width+'x'+screen.height }) }); } catch(e) {}
+
+      var app = document.getElementById('app');
+      var primary = cfg('primaryColor', '#C9A24A');
+      var html = '';
+
+      // Fetch bonus content + promo code in parallel
+      var bonusFiles = [];
+      var promoCode = null;
+      var promoExhausted = false;
+      if (data.eventId) {
+        try {
+          var [bonusRes, promoRes] = await Promise.allSettled([
+            fetch(baseUrl + '/api/events/' + data.eventId + '/bonus-files').then(function(r) { return r.ok ? r.json() : null; }),
+            fetch(baseUrl + '/api/events/' + data.eventId + '/promo-codes/claim', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token: token })
+            }).then(function(r) { return r.ok ? r.json() : null; }),
+          ]);
+          if (bonusRes.status === 'fulfilled' && bonusRes.value && bonusRes.value.data) {
+            bonusFiles = bonusRes.value.data;
+          }
+          if (promoRes.status === 'fulfilled' && promoRes.value && promoRes.value.data) {
+            var pd = promoRes.value.data;
+            if (pd.code) promoCode = pd.code;
+            else if (pd.exhausted) promoExhausted = true;
+          }
+        } catch(e) { /* ignore bonus errors */ }
+      }
+
+      // Header
+      html += '<div class="header">';
+      var logoPath = cfg('logoPath', null);
+      var logoSize = cfg('logoSize', 50);
+      if (logoPath) {
+        html += '<img class="logo" src="' + escHtml(logoPath) + '" alt="Logo" style="width:' + logoSize + '%;max-width:100%;object-fit:contain" /><br/>';
+      }
+      var headlineColor = cfg('headlineColor', '') || primary;
+      var headlineFont = cfg('headlineFont', '');
+      var headlineFontStyle = headlineFont ? "font-family:'" + escHtml(headlineFont) + "',system-ui,sans-serif" : '';
+      html += '<div class="brand" style="color:' + headlineColor + '">' + escHtml(cfg('brandName', 'Multi-Snap Booth')) + '</div>';
+      html += '<h1 style="' + headlineFontStyle + '">' + escHtml(cfg('headline', 'Your Photos')) + '</h1>';
+      var sub = cfg('subHeadline', '');
+      if (sub) html += '<div class="sub">' + escHtml(sub) + '</div>';
+      html += '<div class="divider" style="background:' + primary + '"></div>';
+      html += '</div>';
+
+      var showDownload = cfg('enableDownload', true);
+      var isCloud = (data.locationType === 'cloud');
+
+      // Photo card — show photoQR (with Cloud QR embedded) if available, else plain photo
+      if (data.photoQrUrl) {
+        html += mediaCard('Photo', data.photoQrUrl, data.photoQrDownloadUrl || data.photoQrUrl, showDownload, primary);
+      } else if (data.photoUrl) {
+        html += mediaCard('Photo', data.photoUrl, data.photoDownloadUrl, showDownload, primary);
+      }
+
+      // Clip card
+      if (data.clipUrl) {
+        html += '<div class="media-card" style="border:1px solid ' + primary + '26">';
+        html += '<div class="media-wrap"><video src="' + escHtml(data.clipUrl) + '" autoplay loop muted playsinline controls></video></div>';
+        html += '<div class="card-footer"><span class="card-label">Video Clip</span>';
+        if (showDownload) {
+          var clipKey = '_dl' + (_saveCounter++);
+          window[clipKey] = data.clipDownloadUrl;
+          html += '<button class="download-btn" style="background:' + primaryGradient() + '" onclick="saveFile(this,window[\'' + clipKey + '\'],\'Video Clip\')">' + downloadIcon() + ' Save</button>';
+        }
+        html += '</div></div>';
+      }
+
+      // ── Bonus Content Section (auto-hide if empty) ──
+      var hasBonusContent = bonusFiles.length > 0 || promoCode || promoExhausted;
+      if (hasBonusContent) {
+        html += '<div style="text-align:center;margin:1.5rem 0 1rem;font-size:0.75rem;font-weight:600;color:' + primary + ';letter-spacing:2px">— Bonus Content —</div>';
+
+        // Bonus Images
+        var bonusImages = bonusFiles.filter(function(f) { return f.type === 'image'; });
+        bonusImages.forEach(function(f) {
+          var serveUrl = baseUrl + '/api/events/' + data.eventId + '/bonus-files/' + f.id + '/serve';
+          var dlKey = '_dl' + (_saveCounter++);
+          window[dlKey] = serveUrl;
+          html += '<div class="media-card" style="border:1px solid ' + primary + '26">';
+          html += '<div class="media-wrap" style="padding-top:66.67%;position:relative"><img src="' + escHtml(serveUrl) + '" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" /></div>';
+          html += '<div class="card-footer"><span class="card-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">' + escHtml(f.file_name) + '</span>';
+          if (showDownload) {
+            html += '<button class="download-btn" style="background:' + primaryGradient() + '" onclick="saveFile(this,window[\'' + dlKey + '\'],\'' + escHtml(f.file_name) + '\')">' + downloadIcon() + ' Save</button>';
+          }
+          html += '</div></div>';
+        });
+
+        // Bonus Videos
+        var bonusVideos = bonusFiles.filter(function(f) { return f.type === 'mp4'; });
+        bonusVideos.forEach(function(f) {
+          var serveUrl = baseUrl + '/api/events/' + data.eventId + '/bonus-files/' + f.id + '/serve';
+          var dlKey = '_dl' + (_saveCounter++);
+          window[dlKey] = serveUrl;
+          html += '<div class="media-card" style="border:1px solid ' + primary + '26">';
+          html += '<div class="media-wrap"><video src="' + escHtml(serveUrl) + '" autoplay loop muted playsinline controls style="width:100%"></video></div>';
+          html += '<div class="card-footer"><span class="card-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">' + escHtml(f.file_name) + '</span>';
+          if (showDownload) {
+            html += '<button class="download-btn" style="background:' + primaryGradient() + '" onclick="saveFile(this,window[\'' + dlKey + '\'],\'' + escHtml(f.file_name) + '\')">' + downloadIcon() + ' Save</button>';
+          }
+          html += '</div></div>';
+        });
+
+        // Bonus PDFs
+        var bonusPdfs = bonusFiles.filter(function(f) { return f.type === 'pdf'; });
+        bonusPdfs.forEach(function(f) {
+          var serveUrl = baseUrl + '/api/events/' + data.eventId + '/bonus-files/' + f.id + '/serve';
+          var dlKey = '_dl' + (_saveCounter++);
+          window[dlKey] = serveUrl;
+          html += '<div class="media-card" style="border:1px solid ' + primary + '26;padding:1rem;display:flex;align-items:center;gap:0.75rem">';
+          html += '<span style="font-size:1.5rem;color:#DC2626">&#128196;</span>';
+          html += '<span style="flex:1;font-size:0.8rem;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(f.file_name) + '</span>';
+          html += '<button class="download-btn" style="background:transparent;border:1.5px solid ' + primary + ';color:' + primary + ';font-size:0.7rem" onclick="saveFile(this,window[\'' + dlKey + '\'],\'' + escHtml(f.file_name) + '\')">Download</button>';
+          html += '</div>';
+        });
+
+        // Promo Code Card
+        if (promoCode) {
+          html += '<div class="media-card" style="border:2px solid ' + primary + ';padding:1.25rem;text-align:center">';
+          html += '<div style="font-size:0.7rem;color:#6B7280;margin-bottom:0.5rem">Your Promo Code</div>';
+          html += '<div style="font-size:1.5rem;font-weight:700;font-family:Courier New,monospace;color:#1F2937;letter-spacing:4px;margin-bottom:0.75rem">' + escHtml(promoCode) + '</div>';
+          html += '<button class="download-btn" style="background:' + primary + '" onclick="copyPromo(\'' + escHtml(promoCode) + '\',this)">Copy</button>';
+          html += '</div>';
+        } else if (promoExhausted) {
+          html += '<div class="media-card" style="border:1px solid #FCA5A5;padding:1rem;text-align:center">';
+          html += '<div style="font-size:0.85rem;color:#DC2626">&#128532; ขออภัย code หมดแล้ว</div>';
+          html += '</div>';
+        }
+      }
+
+      // Share buttons — Mode A (Quick Share) + Mode B (Save + Share)
+      if (cfg('enableShare', true)) {
+        // Mode A: Quick Share (link) — FB, LINE, X
+        html += '<div class="share-row">';
+        if (cfg('shareFacebook', true)) {
+          html += '<button class="share-btn fb" onclick="shareToApp(\'facebook\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"/></svg></button>';
+        }
+        if (cfg('shareLine', true)) {
+          html += '<button class="share-btn line" onclick="shareToApp(\'line\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 5.82 2 10.5c0 4.07 3.56 7.5 8.36 8.36.33.07.78.22.89.51.1.26.07.68.03.95l-.14.87c-.04.26-.2 1.01.88.55s5.9-3.47 8.06-5.94C22.08 13.5 22 11.94 22 10.5 22 5.82 17.52 2 12 2z"/></svg></button>';
+        }
+        if (cfg('shareTwitter', false)) {
+          html += '<button class="share-btn tw" onclick="shareToApp(\'twitter\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></button>';
+        }
+        html += '</div>';
+
+        // Mode B: Save + Share (Native Share Sheet) — IG, TikTok, etc.
+        html += '<button class="dl-btn" style="background:linear-gradient(135deg,#C9A24A,#D4B366);margin-top:8px" onclick="saveAndShare()">'
+          + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>'
+          + ' Save + Share</button>';
+      }
+
+      // Download All button
+      if (showDownload) {
+        // Store URLs globally so onclick doesn't need inline JSON
+        window._allDownloadUrls = [];
+        if (data.photoDownloadUrl) window._allDownloadUrls.push(data.photoDownloadUrl);
+        // PhotoQR only in Cloud mode
+        if (isCloud && data.photoQrDownloadUrl) window._allDownloadUrls.push(data.photoQrDownloadUrl);
+        if (data.clipDownloadUrl) window._allDownloadUrls.push(data.clipDownloadUrl);
+        // Add bonus file download URLs
+        bonusFiles.forEach(function(f) {
+          window._allDownloadUrls.push(baseUrl + '/api/events/' + data.eventId + '/bonus-files/' + f.id + '/serve');
+        });
+        if (window._allDownloadUrls.length > 1) {
+          html += '<button class="download-all" style="background:' + primaryGradient() + ';box-shadow:0 4px 20px ' + primary + '4D" onclick="downloadAllWithFeedback(this)">Download All</button>';
+        }
+      }
+
+      // Footer
+      html += '<div class="footer">' + escHtml(cfg('footerText', 'Multi-Snap Booth by alamode')) + '</div>';
+
+      app.innerHTML = html;
+    }
+
+    function copyPromo(code, btn) {
+      navigator.clipboard.writeText(code).then(function() {
+        var orig = btn.innerHTML;
+        btn.innerHTML = checkIcon + ' Copied!';
+        btn.style.background = '#059669';
+        showToast('Code ' + code + ' copied!');
+        setTimeout(function() {
+          btn.innerHTML = orig;
+          btn.style.background = cfg('primaryColor', '#C9A24A');
+        }, 3000);
+      }).catch(function() {
+        showToast('Copy failed — please copy manually: ' + code);
+      });
+    }
+
+    var _saveCounter = 0;
+    function mediaCard(label, imgUrl, dlUrl, showDownload, primary) {
+      var h = '<div class="media-card" style="border:1px solid ' + primary + '26">';
+      h += '<div class="media-wrap"><img src="' + escHtml(imgUrl) + '" alt="' + escHtml(label) + '" /></div>';
+      h += '<div class="card-footer"><span class="card-label">' + escHtml(label) + '</span>';
+      if (showDownload && dlUrl) {
+        // Store URL in global to avoid HTML escaping issues with & in URLs
+        var key = '_dl' + (_saveCounter++);
+        window[key] = dlUrl;
+        h += '<button class="download-btn" style="background:' + primaryGradient() + '" onclick="saveFile(this,window[\'' + key + '\'],\'' + escHtml(label) + '\')">' + downloadIcon() + ' Save</button>';
+      }
+      h += '</div></div>';
+      return h;
+    }
+
+    function showError(title, msg) {
+      var app = document.getElementById('app');
+      app.innerHTML = '<div class="error-screen">' +
+        '<div class="icon">&#128247;</div>' +
+        '<h2>' + escHtml(title) + '</h2>' +
+        '<p>' + escHtml(msg) + '</p></div>';
+    }
+
+    function downloadIcon() {
+      return '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2v8m0 0L5 7m3 3l3-3M3 12h10" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    }
+
+    var checkIcon = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8.5l3.5 3.5L13 4" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+    var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    async function saveFile(btn, url, label) {
+      var origHtml = btn.innerHTML;
+      btn.innerHTML = '<span style="display:inline-flex;align-items:center;gap:4px">Saving...</span>';
+      btn.style.opacity = '0.7';
+      btn.disabled = true;
+
+      try {
+        var resp = await fetch(url);
+        if (!resp.ok) throw new Error('fetch failed: ' + resp.status);
+        var blob = await resp.blob();
+        var ext = '';
+        if (blob.type.indexOf('image/jpeg') !== -1) ext = '.jpg';
+        else if (blob.type.indexOf('image/png') !== -1) ext = '.png';
+        else if (blob.type.indexOf('video/mp4') !== -1) ext = '.mp4';
+        else if (blob.type.indexOf('pdf') !== -1) ext = '.pdf';
+        var filename = (label || 'download').replace(/[^a-zA-Z0-9 _-]/g, '') + ext;
+
+        // iOS only: must use Web Share API (Safari ignores <a download>)
+        if (isIOS && navigator.share && navigator.canShare) {
+          var file = new File([blob], filename, { type: blob.type });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file] });
+            btn.innerHTML = checkIcon + ' Saved!';
+            btn.style.opacity = '1';
+            btn.style.background = '#059669';
+            showToast(label + ' — tap Save Image');
+            setTimeout(function() { btn.innerHTML = origHtml; btn.style.background = primaryGradient(); btn.disabled = false; }, 3000);
+            return;
+          }
+        }
+
+        // Android & Desktop: blob download via <a download>
+        var blobUrl = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 5000);
+
+        btn.innerHTML = checkIcon + ' Saved!';
+        btn.style.opacity = '1';
+        btn.style.background = '#059669';
+        showToast(label + ' saved to your device');
+      } catch (e) {
+        console.error('saveFile error:', e);
+        // Fallback: direct link with download header
+        window.open(url, '_blank');
+        btn.innerHTML = origHtml;
+        btn.style.opacity = '1';
+        btn.style.background = primaryGradient();
+        btn.disabled = false;
+        return;
+      }
+
+      setTimeout(function() {
+        btn.innerHTML = origHtml;
+        btn.style.background = primaryGradient();
+        btn.disabled = false;
+      }, 3000);
+    }
+
+    async function downloadAllWithFeedback(btn) {
+      var urls = window._allDownloadUrls || [];
+      if (!urls.length) return;
+      var origText = btn.textContent;
+      var total = urls.length;
+      btn.textContent = 'Saving 1/' + total + '...';
+      btn.style.opacity = '0.7';
+      btn.disabled = true;
+
+      // iOS only: collect all files and share at once
+      if (isIOS && navigator.share && navigator.canShare) {
+        var files = [];
+        for (var i = 0; i < urls.length; i++) {
+          btn.textContent = 'Loading ' + (i + 1) + '/' + total + '...';
+          try {
+            var resp = await fetch(urls[i]);
+            var blob = await resp.blob();
+            var ext = '';
+            if (blob.type.indexOf('image/jpeg') !== -1) ext = '.jpg';
+            else if (blob.type.indexOf('image/png') !== -1) ext = '.png';
+            else if (blob.type.indexOf('video/mp4') !== -1) ext = '.mp4';
+            else if (blob.type.indexOf('pdf') !== -1) ext = '.pdf';
+            files.push(new File([blob], 'file-' + (i + 1) + ext, { type: blob.type }));
+          } catch(e) { /* skip failed */ }
+        }
+        if (files.length > 0 && navigator.canShare({ files: files })) {
+          try {
+            await navigator.share({ files: files });
+            btn.textContent = '\u2713 All Saved!';
+            btn.style.opacity = '1';
+            btn.style.background = '#059669';
+            showToast('Tap "Save All" to save ' + files.length + ' files');
+            setTimeout(function() { btn.textContent = origText; btn.style.background = primaryGradient(); btn.disabled = false; }, 3000);
+            return;
+          } catch(e) { /* user cancelled or failed, fall through */ }
+        }
+      }
+
+      // Android & Desktop: blob download one by one
+      for (var i = 0; i < urls.length; i++) {
+        btn.textContent = 'Saving ' + (i + 1) + '/' + total + '...';
+        try {
+          var resp = await fetch(urls[i]);
+          var blob = await resp.blob();
+          var blobUrl = URL.createObjectURL(blob);
+          var ext = '';
+          if (blob.type.indexOf('image/jpeg') !== -1) ext = '.jpg';
+          else if (blob.type.indexOf('image/png') !== -1) ext = '.png';
+          else if (blob.type.indexOf('video/mp4') !== -1) ext = '.mp4';
+          else if (blob.type.indexOf('pdf') !== -1) ext = '.pdf';
+          var a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = 'file-' + (i + 1) + ext;
+          a.style.display = 'none';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout((function(u) { return function() { URL.revokeObjectURL(u); }; })(blobUrl), 5000);
+        } catch (e) {
+          var fa = document.createElement('a');
+          fa.href = urls[i]; fa.download = ''; fa.style.display = 'none';
+          document.body.appendChild(fa); fa.click();
+          document.body.removeChild(fa);
+        }
+        if (i < urls.length - 1) await new Promise(function(r) { setTimeout(r, 400); });
+      }
+
+      btn.textContent = '\u2713 All Saved!';
+      btn.style.opacity = '1';
+      btn.style.background = '#059669';
+      showToast('All ' + total + ' files saved to your device');
+
+      setTimeout(function() {
+        btn.textContent = origText;
+        btn.style.background = primaryGradient();
+        btn.disabled = false;
+      }, 3000);
+    }
+
+    function downloadAll(urls) {
+      urls.forEach(function(u, i) {
+        setTimeout(function() {
+          var a = document.createElement('a');
+          a.href = u; a.download = ''; a.style.display = 'none';
+          document.body.appendChild(a); a.click();
+          document.body.removeChild(a);
+        }, i * 500);
+      });
+    }
+
+    /** Share via Web Share API (file) → platform URL → download fallback */
+    // Track share event
+    function trackShare(platform) {
+      var t = window.location.pathname.split('/').pop();
+      try { fetch('/api/delivery/share/' + t, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ platform: platform }) }); } catch(e) {}
+      try { fetch('/api/delivery/analytics', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ token: t, eventType: 'share', platform: platform, deviceType: /Mobile|Android/i.test(navigator.userAgent)?'mobile':'desktop', os: /iPhone|iPad/.test(navigator.userAgent)?'iOS':/Android/.test(navigator.userAgent)?'Android':'other' }) }); } catch(e) {}
+    }
+
+    // Save + Share (Mode B) — download photo then open native share sheet
+    async function saveAndShare() {
+      trackShare('native');
+      var imgUrl = pageData ? (pageData.photoQrUrl || pageData.photoUrl) : null;
+      if (!imgUrl) return;
+      var eventName = cfg('brandName', 'Multi-Snap Booth');
+      var hashtags = '#' + eventName.replace(/\s+/g, '') + ' #PhotoBooth #MultiSnapBooth';
+      try {
+        var resp = await fetch(imgUrl);
+        var blob = await resp.blob();
+        var file = new File([blob], 'photobooth.jpg', { type: 'image/jpeg' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ title: eventName, text: hashtags, files: [file] });
+          return;
+        }
+      } catch(e) { if (e.name === 'AbortError') return; }
+      // Fallback: auto-download
+      var a = document.createElement('a'); a.href = imgUrl; a.download = 'photobooth.jpg'; a.click();
+      alert('Photo saved! Open Instagram or TikTok to share.');
+    }
+
+    async function shareToApp(platform) {
+      trackShare(platform);
+      var shareTitle = cfg('brandName', 'Multi-Snap Booth');
+      var shareText = cfg('headline', 'Your Photos') + ' #PhotoBooth #MultiSnapBooth';
+
+      // Cloud mode: use the download page URL for sharing (publicly accessible)
+      var shareUrl = pageData && pageData.downloadUrl ? pageData.downloadUrl : window.location.href;
+
+      // Get the best image URL (Cloud: prefer photoQR, Local: plain photo)
+      var imgUrl = null;
+      if (pageData) {
+        imgUrl = (pageData.locationType === 'cloud' && pageData.photoQrUrl) ? pageData.photoQrUrl : pageData.photoUrl;
+      }
+
+      // Method 1: Web Share API with file (best experience — sends actual image)
+      if (imgUrl && navigator.share && navigator.canShare) {
+        try {
+          var resp = await fetch(imgUrl);
+          var blob = await resp.blob();
+          var ext = blob.type === 'image/png' ? '.png' : '.jpg';
+          var file = new File([blob], 'photo' + ext, { type: blob.type });
+          var shareData = { title: shareTitle, text: shareText, files: [file] };
+          if (navigator.canShare(shareData)) {
+            await navigator.share(shareData);
+            return; // success
+          }
+        } catch (e) {
+          if (e.name === 'AbortError') return; // user cancelled
+          // fall through to platform-specific URL
+        }
+      }
+
+      // Method 2: Open platform-specific share URL
+      var platformUrl = null;
+      var encoded = encodeURIComponent(shareUrl);
+      var encodedText = encodeURIComponent(shareText + ' ' + shareUrl);
+
+      if (platform === 'facebook') {
+        platformUrl = 'https://www.facebook.com/sharer/sharer.php?u=' + encoded;
+      } else if (platform === 'line') {
+        platformUrl = 'https://social-plugins.line.me/lineit/share?url=' + encoded;
+      } else if (platform === 'twitter') {
+        platformUrl = 'https://twitter.com/intent/tweet?text=' + encodedText;
+      }
+
+      if (platformUrl) {
+        window.open(platformUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        // Generic fallback: Web Share API without file
+        if (navigator.share) {
+          try {
+            await navigator.share({ title: shareTitle, text: shareText, url: shareUrl });
+          } catch (e) { /* user cancelled or unsupported */ }
+        }
+      }
+    }
+
+    function showToast(msg) {
+      var existing = document.getElementById('share-toast');
+      if (existing) existing.remove();
+      var t = document.createElement('div');
+      t.id = 'share-toast';
+      t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);' +
+        'background:#1F2937;color:#FFF;padding:14px 24px;border-radius:12px;font-size:13px;' +
+        'z-index:9999;text-align:center;max-width:340px;box-shadow:0 8px 24px rgba(0,0,0,0.3)';
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(function() { t.remove(); }, 5000);
+    }
+
+    function lightenHex(hex, amt) {
+      try {
+        var h = hex.replace('#', '');
+        var r = Math.min(255, parseInt(h.substring(0,2),16) + amt);
+        var g = Math.min(255, parseInt(h.substring(2,4),16) + amt);
+        var b = Math.min(255, parseInt(h.substring(4,6),16) + amt);
+        return '#' + r.toString(16).padStart(2,'0') + g.toString(16).padStart(2,'0') + b.toString(16).padStart(2,'0');
+      } catch(e) { return hex; }
+    }
+
+    function escHtml(s) {
+      if (typeof s !== 'string') return '';
+      var d = document.createElement('div');
+      d.appendChild(document.createTextNode(s));
+      return d.innerHTML;
+    }
+  </script>
+</body>
+</html>

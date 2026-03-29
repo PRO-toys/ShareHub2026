@@ -1,0 +1,10 @@
+node_modules/
+dist/
+storage/
+.env
+*.sqlite
+
+# Booth output files (saved by VDO Vintage / MATRIX)
+VDV_*.webm
+VDV_*.jpg
+*.mp4

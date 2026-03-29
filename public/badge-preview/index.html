@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PhotoQRbag — Badge Preview</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Inter','Segoe UI',sans-serif; background:#f5f5f5; min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:24px; }
+
+  h1 { font-size:20px; color:#1a1a2e; margin-bottom:16px; }
+
+  .badge-container { background:white; padding:16px; border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,0.1); margin-bottom:16px; }
+  .badge-container img { display:block; max-width:100%; width:500px; border-radius:4px; }
+
+  .controls { display:flex; gap:8px; }
+  .btn { padding:14px 32px; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; }
+  .btn-gold { background:#C9A24A; color:white; }
+  .btn-outline { background:white; border:1.5px solid #ddd; color:#333; }
+
+  .loading { text-align:center; padding:60px; color:#999; }
+
+  @media print {
+    body { background:white; padding:0; }
+    .controls, h1 { display:none; }
+    .badge-container { box-shadow:none; padding:0; border-radius:0; }
+    .badge-container img { width:86mm; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Badge Preview</h1>
+
+<div class="badge-container" id="badgeContainer">
+  <div class="loading">Loading badge...</div>
+</div>
+
+<div class="controls">
+  <button class="btn btn-gold" onclick="window.print()">Print</button>
+  <button class="btn btn-outline" onclick="window.close()">Close</button>
+</div>
+
+<script>
+const API = '';
+const params = new URLSearchParams(location.search);
+const token = params.get('token') || '';
+
+if (token) {
+  const img = new Image();
+  img.onload = () => {
+    document.getElementById('badgeContainer').innerHTML = '';
+    document.getElementById('badgeContainer').appendChild(img);
+  };
+  img.onerror = () => {
+    document.getElementById('badgeContainer').innerHTML = '<div class="loading">Failed to load badge</div>';
+  };
+  img.src = API + '/api/badge/print/' + token;
+} else {
+  document.getElementById('badgeContainer').innerHTML = '<div class="loading">No token provided</div>';
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ShareHub 2026</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', 'Segoe UI', sans-serif; background: #f5f5f5; color: #333; min-height: 100vh; }
+
+  .header { background: linear-gradient(135deg, #1a1a2e, #16213e); color: white; padding: 32px; text-align: center; }
+  .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+  .header p { color: #C9A24A; font-size: 14px; }
+
+  .container { max-width: 800px; margin: 24px auto; padding: 0 16px; }
+
+  .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  .card h2 { font-size: 18px; margin-bottom: 16px; color: #1a1a2e; display: flex; align-items: center; gap: 8px; }
+
+  .status-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+  .status-row:last-child { border: none; }
+  .status-label { color: #666; font-size: 14px; }
+  .status-value { font-weight: 600; font-size: 14px; }
+  .status-ok { color: #22c55e; }
+  .status-warn { color: #f59e0b; }
+  .status-err { color: #ef4444; }
+
+  .input-group { margin-bottom: 16px; }
+  .input-group label { display: block; font-size: 13px; color: #666; margin-bottom: 6px; }
+  .input-row { display: flex; gap: 8px; }
+  .input-row input { flex: 1; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+  .input-row input:focus { outline: none; border-color: #C9A24A; }
+
+  .btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .btn-gold { background: #C9A24A; color: white; }
+  .btn-gold:hover { background: #b8913d; }
+  .btn-outline { background: white; border: 1px solid #ddd; color: #333; }
+  .btn-outline:hover { background: #f5f5f5; }
+
+  .links { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .link-card { display: flex; align-items: center; gap: 12px; padding: 16px; background: #f8f8f8; border-radius: 10px; text-decoration: none; color: #333; transition: all 0.2s; }
+  .link-card:hover { background: #f0f0f0; transform: translateY(-1px); }
+  .link-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  .link-card h3 { font-size: 15px; margin-bottom: 2px; }
+  .link-card p { font-size: 12px; color: #888; }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .stat { text-align: center; padding: 16px; background: #f8f8f8; border-radius: 10px; }
+  .stat-num { font-size: 28px; font-weight: 700; color: #C9A24A; }
+  .stat-label { font-size: 12px; color: #888; margin-top: 4px; }
+
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 12px 24px; border-radius: 8px; font-size: 14px; display: none; z-index: 100; }
+  .toast.show { display: block; animation: fadeIn 0.3s; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>ShareHub 2026</h1>
+  <p>Standalone Photo Sharing Server</p>
+</div>
+
+<div class="container">
+  <!-- Status -->
+  <div class="card">
+    <h2>&#9889; Status</h2>
+    <div class="status-row">
+      <span class="status-label">Server</span>
+      <span class="status-value status-ok" id="statusServer">Online</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Watch Folder</span>
+      <span class="status-value" id="statusWatch">-</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Firebase</span>
+      <span class="status-value" id="statusFirebase">-</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Face Search</span>
+      <span class="status-value" id="statusFace">-</span>
+    </div>
+  </div>
+
+  <!-- Config -->
+  <div class="card">
+    <h2>&#9881; Watch Folder (Hot Folder)</h2>
+    <p style="font-size:13px; color:#888; margin-bottom:12px;">เลือกโฟลเดอร์ Output ของ Booth/MATRIX — ภาพใหม่จะถูก detect + สร้าง QR อัตโนมัติ</p>
+    <div class="input-group">
+      <div class="input-row">
+        <input type="text" id="watchFolder" placeholder="C:\Users\...\Desktop\01">
+        <button class="btn btn-outline" onclick="openBrowser()">Browse</button>
+        <button class="btn btn-gold" onclick="saveWatchFolder()">Save</button>
+      </div>
+    </div>
+    <div id="folderStatus" style="font-size:12px; color:#888;"></div>
+    <!-- Folder Browser Modal -->
+    <div id="browserModal" style="display:none; margin-top:12px; border:1px solid #e0e0e0; border-radius:10px; overflow:hidden;">
+      <div style="background:#f8f8f8; padding:10px 14px; display:flex; align-items:center; gap:8px; border-bottom:1px solid #e0e0e0;">
+        <button class="btn btn-outline" onclick="browseUp()" style="padding:6px 10px; font-size:13px;">&#11014; Up</button>
+        <span id="browserPath" style="flex:1; font-size:13px; color:#666; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+        <button class="btn btn-outline" onclick="closeBrowser()" style="padding:6px 10px; font-size:13px;">&#10005;</button>
+      </div>
+      <div id="browserBadge" style="display:none; padding:6px 14px; font-size:12px; font-weight:600;"></div>
+      <div id="browserList" style="max-height:280px; overflow-y:auto;"></div>
+      <div style="padding:10px 14px; border-top:1px solid #e0e0e0; text-align:right;">
+        <button class="btn btn-gold" onclick="selectCurrentFolder()">Select This Folder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="card">
+    <h2>&#128202; Statistics</h2>
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-num" id="statSessions">0</div>
+        <div class="stat-label">Sessions</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num" id="statDeliveries">0</div>
+        <div class="stat-label">QR Delivered</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num" id="statShares">0</div>
+        <div class="stat-label">Shares</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Links -->
+  <div class="card">
+    <h2>&#128279; Pages</h2>
+    <div class="links">
+      <a class="link-card" href="/viewer/" target="_blank">
+        <div class="link-icon" style="background:#e8f5e9;">&#128247;</div>
+        <div><h3>Viewer (16:9)</h3><p>Photo gallery + search</p></div>
+      </a>
+      <a class="link-card" href="/viewer/portrait/" target="_blank">
+        <div class="link-icon" style="background:#e3f2fd;">&#128241;</div>
+        <div><h3>Viewer (9:16)</h3><p>Portrait display</p></div>
+      </a>
+      <a class="link-card" href="/face-upload/" target="_blank">
+        <div class="link-icon" style="background:#fce4ec;">&#128100;</div>
+        <div><h3>Face Search</h3><p>Search by selfie</p></div>
+      </a>
+      <a class="link-card" href="/api/health" target="_blank">
+        <div class="link-icon" style="background:#fff3e0;">&#9889;</div>
+        <div><h3>Health Check</h3><p>API status</p></div>
+      </a>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '';
+
+async function loadStatus() {
+  try {
+    const res = await fetch(API + '/api/health');
+    const data = await res.json();
+    document.getElementById('statusServer').textContent = 'Online';
+    document.getElementById('statusServer').className = 'status-value status-ok';
+
+    const wf = data.watchFolder;
+    const el = document.getElementById('statusWatch');
+    if (wf && wf !== '(not set)') {
+      el.textContent = wf;
+      el.className = 'status-value status-ok';
+      document.getElementById('watchFolder').value = wf;
+    } else {
+      el.textContent = 'Not set';
+      el.className = 'status-value status-warn';
+    }
+  } catch {
+    document.getElementById('statusServer').textContent = 'Offline';
+    document.getElementById('statusServer').className = 'status-value status-err';
+  }
+
+  // Firebase status
+  try {
+    const res = await fetch(API + '/api/events');
+    document.getElementById('statusFirebase').textContent = 'Connected';
+    document.getElementById('statusFirebase').className = 'status-value status-ok';
+  } catch {
+    document.getElementById('statusFirebase').textContent = 'N/A';
+    document.getElementById('statusFirebase').className = 'status-value status-warn';
+  }
+
+  // Face service
+  try {
+    const res = await fetch(API + '/api/face/health');
+    const data = await res.json();
+    const el = document.getElementById('statusFace');
+    el.textContent = data.status === 'online' ? 'Online' : 'Offline';
+    el.className = 'status-value ' + (data.status === 'online' ? 'status-ok' : 'status-warn');
+  } catch {
+    document.getElementById('statusFace').textContent = 'Offline';
+    document.getElementById('statusFace').className = 'status-value status-warn';
+  }
+
+  // Stats
+  try {
+    const res = await fetch(API + '/api/sessions?limit=10000');
+    const sessions = await res.json();
+    document.getElementById('statSessions').textContent = sessions.length;
+  } catch {}
+}
+
+async function saveWatchFolder() {
+  const folder = document.getElementById('watchFolder').value.trim();
+  if (!folder) return showToast('Please enter a folder path');
+
+  document.getElementById('folderStatus').textContent = 'Saving...';
+  document.getElementById('folderStatus').style.color = '#888';
+
+  try {
+    const res = await fetch(API + '/api/config/watch-folder', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: folder })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      const msg = data.hotReload
+        ? 'Saved + Watcher started! (Hot Reload)'
+        : 'Saved! ' + (data.message || '');
+      showToast(msg);
+      document.getElementById('folderStatus').textContent = msg;
+      document.getElementById('folderStatus').style.color = '#22c55e';
+      closeBrowser();
+      loadStatus();
+    } else {
+      showToast('Error: ' + (data.error || 'Unknown'));
+      document.getElementById('folderStatus').textContent = data.error || 'Error';
+      document.getElementById('folderStatus').style.color = '#ef4444';
+    }
+  } catch {
+    showToast('Server not reachable');
+  }
+}
+
+// ─── Folder Browser ────────────────────────────────────
+let currentBrowsePath = '';
+
+function openBrowser() {
+  document.getElementById('browserModal').style.display = 'block';
+  const current = document.getElementById('watchFolder').value.trim();
+  browseTo(current || '');
+}
+
+function closeBrowser() {
+  document.getElementById('browserModal').style.display = 'none';
+}
+
+function browseUp() {
+  if (!currentBrowsePath) return;
+  const parent = currentBrowsePath.replace(/[/\\][^/\\]+[/\\]?$/, '');
+  browseTo(parent || '');
+}
+
+async function browseTo(targetPath) {
+  try {
+    const url = API + '/api/config/browse' + (targetPath ? '?path=' + encodeURIComponent(targetPath) : '');
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.error) {
+      showToast(data.error);
+      return;
+    }
+
+    currentBrowsePath = data.path || '';
+    document.getElementById('browserPath').textContent = currentBrowsePath || 'Drives';
+
+    // Format badge
+    const badge = document.getElementById('browserBadge');
+    if (data.has3Acts) {
+      badge.style.display = 'block';
+      badge.style.background = '#e8f5e9';
+      badge.style.color = '#2e7d32';
+      badge.textContent = '3ActsBooth format detected (BackUp/Series/)';
+    } else if (data.hasMatrix) {
+      badge.style.display = 'block';
+      badge.style.background = '#e3f2fd';
+      badge.style.color = '#1565c0';
+      badge.textContent = 'MATRIX format detected (YYYY-MM-DD_HHmmss)';
+    } else {
+      badge.style.display = 'none';
+    }
+
+    // Render directory list
+    const list = document.getElementById('browserList');
+    if (data.dirs.length === 0) {
+      list.innerHTML = '<div style="padding:16px; color:#999; text-align:center;">Empty folder</div>';
+      return;
+    }
+
+    list.innerHTML = data.dirs.map(d => {
+      const fullPath = data.isRoot && !currentBrowsePath ? d : (currentBrowsePath + '\\' + d);
+      const isSpecial = d === 'BackUp' || /^\d{4}-\d{2}-\d{2}_\d{6}$/.test(d);
+      return `<div onclick="browseTo('${fullPath.replace(/\\/g, '\\\\')}')"
+        style="padding:10px 14px; cursor:pointer; display:flex; align-items:center; gap:8px;
+        border-bottom:1px solid #f5f5f5; ${isSpecial ? 'background:#fffde7;' : ''}"
+        onmouseover="this.style.background='#f0f0f0'" onmouseout="this.style.background='${isSpecial ? '#fffde7' : ''}'">
+        <span style="font-size:16px;">${isSpecial ? '&#11088;' : '&#128193;'}</span>
+        <span style="font-size:14px;">${d}</span>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    showToast('Browse failed');
+  }
+}
+
+function selectCurrentFolder() {
+  if (!currentBrowsePath) return showToast('Select a folder first');
+  document.getElementById('watchFolder').value = currentBrowsePath;
+  closeBrowser();
+  showToast('Path set — click Save to apply');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+loadStatus();
+setInterval(loadStatus, 30000);
+</script>
+</body>
+</html>
