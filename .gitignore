@@ -7,4 +7,7 @@ storage/
 # Booth output files (saved by VDO Vintage / MATRIX)
 VDV_*.webm
 VDV_*.jpg
+vdo-vintage-*.webm
+vdo-vintage-*.jpg
 *.mp4
+test-*.txt
