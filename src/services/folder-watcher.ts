@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { CONFIG } from '../config';
 import { getSessionBySeriesId, upsertSession } from '../db/database';
-import { createDeliveryForSession } from './qr-service';
+import { createDeliveryForSession, getLocalIpAddress } from './qr-service';
 import { syncToCloud } from './firebase';
 import { indexFaceFromPhoto } from './face-service';
 
@@ -13,12 +13,13 @@ const processedFiles = new Set<string>();
 /** Debounce map: seriesId → timeout */
 const seriesDebounce = new Map<string, NodeJS.Timeout>();
 
-type SourceFormat = '3acts' | 'matrix' | 'flat';
+type SourceFormat = '3acts' | 'matrix' | 'standard' | 'flat';
 
 /**
  * Auto-detect folder format:
  * - 3ActsBooth: {folder}/BackUp/Series/{id}/PhotoQR/*.jpg
  * - MATRIX:     {folder}/{YYYY-MM-DD_HHmmss}/CAM_001.jpg + bullet_time.mp4
+ * - Standard:   {folder}/{boothId}/{sessionId}/photo.jpg + metadata.json
  * - Flat:       {folder}/*.jpg + *.mp4 (any other structure)
  */
 function detectFormat(watchFolder: string): SourceFormat {
@@ -33,7 +34,46 @@ function detectFormat(watchFolder: string): SourceFormat {
     if (dirs.length > 0) return 'matrix';
   } catch { /* ignore */ }
 
+  // Check Standard format: {folder}/{boothId}/{sessionId}/ with photo files
+  try {
+    const topDirs = fs.readdirSync(watchFolder).filter(d => {
+      const full = path.join(watchFolder, d);
+      return fs.statSync(full).isDirectory() && !d.startsWith('.') && !d.startsWith('_');
+    });
+    for (const boothDir of topDirs) {
+      const boothPath = path.join(watchFolder, boothDir);
+      const subDirs = fs.readdirSync(boothPath).filter(d => {
+        const full = path.join(boothPath, d);
+        return fs.statSync(full).isDirectory() && !d.startsWith('.');
+      });
+      for (const sessionDir of subDirs) {
+        const sessionPath = path.join(boothPath, sessionDir);
+        const files = fs.readdirSync(sessionPath);
+        // Standard format has photo.jpg or metadata.json
+        if (files.some(f => /^photo\.(jpg|jpeg|png|webp)$/i.test(f)) || files.includes('metadata.json')) {
+          return 'standard';
+        }
+      }
+    }
+  } catch { /* ignore */ }
+
   return 'flat';
+}
+
+/**
+ * Check if a file's size is stable (not being written to).
+ * Returns true if file size doesn't change over the check period.
+ */
+async function isFileStable(filePath: string, waitMs = 1000): Promise<boolean> {
+  try {
+    const stat1 = fs.statSync(filePath);
+    await new Promise(resolve => setTimeout(resolve, waitMs));
+    if (!fs.existsSync(filePath)) return false;
+    const stat2 = fs.statSync(filePath);
+    return stat1.size === stat2.size && stat1.mtimeMs === stat2.mtimeMs;
+  } catch {
+    return false;
+  }
 }
 
 export function startFolderWatcher(eventId?: string): void {
@@ -75,6 +115,19 @@ export function startFolderWatcher(eventId?: string): void {
       ];
       break;
     }
+    case 'standard': {
+      // Standard: {folder}/{boothId}/{sessionId}/photo*.jpg + clip.* + metadata.json
+      // Skip .tmp_ folders (atomic write pattern)
+      patterns = [
+        path.join(watchFolder, '*', '*', 'photo*.jpg'),
+        path.join(watchFolder, '*', '*', 'photo*.jpeg'),
+        path.join(watchFolder, '*', '*', 'photo*.png'),
+        path.join(watchFolder, '*', '*', 'photo*.webp'),
+        path.join(watchFolder, '*', '*', 'clip.*'),
+        path.join(watchFolder, '*', '*', 'metadata.json'),
+      ];
+      break;
+    }
     default: {
       // Flat: watch any jpg/mp4 in subfolders
       patterns = [
@@ -112,6 +165,10 @@ export function startFolderWatcher(eventId?: string): void {
 function handleNewFile(filePath: string, format: SourceFormat, eventId?: string): void {
   const normalized = filePath.replace(/\\/g, '/');
   if (processedFiles.has(normalized)) return;
+
+  // ─── Atomic write: skip .tmp_ folders ───
+  if (normalized.includes('/.tmp_') || normalized.includes('\\.tmp_')) return;
+
   processedFiles.add(normalized);
 
   let sessionId: string;
@@ -134,6 +191,18 @@ function handleNewFile(filePath: string, format: SourceFormat, eventId?: string)
       const fileName = parts[parts.length - 1];
       sessionId = parts[parts.length - 2]; // folder name = session ID
       console.log(`[Watcher] MATRIX: ${fileName} (session: ${sessionId})`);
+      break;
+    }
+    case 'standard': {
+      // Parse: .../WATCH_FOLDER/{boothId}/{sessionId}/{filename}
+      const parts = normalized.split('/');
+      const fileName = parts[parts.length - 1];
+      const sessionFolder = parts[parts.length - 2];
+      const boothFolder = parts[parts.length - 3];
+      // Skip temp/processing folders
+      if (sessionFolder.startsWith('.') || sessionFolder.startsWith('_')) return;
+      sessionId = `${boothFolder}/${sessionFolder}`;
+      console.log(`[Watcher] Standard: ${fileName} (booth: ${boothFolder}, session: ${sessionFolder})`);
       break;
     }
     default: {
@@ -209,6 +278,40 @@ async function processSessionFolder(sessionId: string, format: SourceFormat, eve
           : clipFiles.length > 0
             ? path.join(sessionPath, clipFiles[0])
             : null;
+        break;
+      }
+      case 'standard': {
+        // Standard: {WATCH_FOLDER}/{boothId}/{sessionFolder}/
+        sessionPath = path.join(CONFIG.WATCH_FOLDER, sessionId); // sessionId = "boothId/sessionFolder"
+        if (!fs.existsSync(sessionPath)) return;
+
+        const stdFiles = safeReadDir(sessionPath);
+
+        // File stability check — ensure files are fully written
+        const primaryCandidates = stdFiles.filter(f => /^photo\.(jpg|jpeg|png|webp)$/i.test(f));
+        const extraPhotos = stdFiles.filter(f => /^photo_\d+\.(jpg|jpeg|png|webp)$/i.test(f));
+        photoFiles = [...primaryCandidates, ...extraPhotos];
+        clipFiles = stdFiles.filter(f => /^clip\.(mp4|webm|mov)$/i.test(f));
+
+        // Prefer photo.jpg as primary
+        if (primaryCandidates.length > 0) {
+          primaryPhoto = path.join(sessionPath, primaryCandidates[0]);
+        } else if (photoFiles.length > 0) {
+          primaryPhoto = path.join(sessionPath, photoFiles[0]);
+        }
+
+        clipPath = clipFiles.length > 0 ? path.join(sessionPath, clipFiles[0]) : null;
+
+        // Stability check for primary photo
+        if (primaryPhoto) {
+          const stable = await isFileStable(primaryPhoto);
+          if (!stable) {
+            console.log(`[Watcher] Standard: file still being written, re-queuing ${sessionId}`);
+            processedFiles.delete(sessionId);
+            setTimeout(() => processSessionFolder(sessionId, format, eventId), 2000);
+            return;
+          }
+        }
         break;
       }
       default: {
@@ -340,6 +443,8 @@ async function processSessionFolder(sessionId: string, format: SourceFormat, eve
         photoPath: photoQrPath || primaryPhoto,
         clipPath: clipPath || undefined,
         qrToken: delivery.token,
+        localServerIp: getLocalIpAddress(),
+        localServerPort: CONFIG.PORT,
       }).catch(err => {
         console.warn(`[Watcher] Cloud sync failed: ${err.message}`);
       });
@@ -379,6 +484,24 @@ export function scanExistingSeries(eventId?: string): void {
       dirs = fs.readdirSync(watchFolder).filter(d =>
         fs.statSync(path.join(watchFolder, d)).isDirectory() && /^\d{4}-\d{2}-\d{2}_\d{6}$/.test(d)
       );
+      break;
+    }
+    case 'standard': {
+      // Standard: scan {boothId}/{sessionId}/ — skip .tmp_ folders
+      const boothDirs = fs.readdirSync(watchFolder).filter(d => {
+        const full = path.join(watchFolder, d);
+        return fs.statSync(full).isDirectory() && !d.startsWith('.') && !d.startsWith('_');
+      });
+      for (const boothDir of boothDirs) {
+        const boothPath = path.join(watchFolder, boothDir);
+        const sessionDirs = fs.readdirSync(boothPath).filter(d => {
+          const full = path.join(boothPath, d);
+          return fs.statSync(full).isDirectory() && !d.startsWith('.') && !d.startsWith('_');
+        });
+        for (const sessionDir of sessionDirs) {
+          dirs.push(`${boothDir}/${sessionDir}`);
+        }
+      }
       break;
     }
     default: {

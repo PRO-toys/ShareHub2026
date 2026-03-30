@@ -129,6 +129,36 @@
     </div>
   </div>
 
+  <!-- Booth Intake API -->
+  <div class="card">
+    <h2>&#128247; Booth Intake API</h2>
+    <p style="font-size:13px; color:#888; margin-bottom:12px;">โปรแกรม Booth ส่งภาพเข้ามาผ่าน HTTP API ได้โดยตรง — ไม่ต้องพึ่ง folder watcher</p>
+    <div class="status-row">
+      <span class="status-label">Upload Endpoint</span>
+      <span class="status-value" id="boothUploadUrl" style="font-size:12px; word-break:break-all;">-</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Status Endpoint</span>
+      <span class="status-value" id="boothStatusUrl" style="font-size:12px; word-break:break-all;">-</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">API Key</span>
+      <span class="status-value" style="font-family:monospace; font-size:12px;">x-booth-api-key: <span id="boothApiKeyDisplay">***</span>
+        <button onclick="toggleApiKey()" style="background:none; border:none; cursor:pointer; font-size:11px; color:#C9A24A; margin-left:4px;">show</button>
+      </span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Max Upload Size</span>
+      <span class="status-value" id="boothMaxSize">-</span>
+    </div>
+    <div id="boothStats" style="margin-top:12px;"></div>
+
+    <div style="margin-top:16px; padding:12px; background:#f8f8f8; border-radius:8px; font-size:12px; color:#666;">
+      <strong>curl example:</strong><br>
+      <code id="curlExample" style="font-size:11px; word-break:break-all;">curl -X POST http://...:3200/api/booth/upload -H "x-booth-api-key: ***" -F "photo=@photo.jpg" -F "boothId=booth-A"</code>
+    </div>
+  </div>
+
   <!-- Quick Links -->
   <div class="card">
     <h2>&#128279; Pages</h2>
@@ -329,8 +359,47 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 3000);
 }
 
+let boothApiKeyVisible = false;
+
+async function loadBoothInfo() {
+  try {
+    const res = await fetch(API + '/api/booth/status');
+    const data = await res.json();
+
+    const ip = data.serverIp || 'localhost';
+    const port = data.port || 3200;
+    document.getElementById('boothUploadUrl').textContent = `http://${ip}:${port}/api/booth/upload`;
+    document.getElementById('boothStatusUrl').textContent = `http://${ip}:${port}/api/booth/status`;
+    document.getElementById('boothMaxSize').textContent = `${data.maxUploadSizeMB || 200} MB`;
+
+    document.getElementById('curlExample').textContent =
+      `curl -X POST http://${ip}:${port}/api/booth/upload -H "x-booth-api-key: YOUR_KEY" -F "photo=@photo.jpg" -F "boothId=booth-A"`;
+
+    // Booth upload stats
+    if (data.booths && data.booths.length > 0) {
+      const statsHtml = '<div style="font-size:13px; font-weight:600; margin-bottom:8px;">Active Booths</div>' +
+        data.booths.map(b =>
+          `<div class="status-row">
+            <span class="status-label">${b.booth_id}</span>
+            <span class="status-value">${b.total_uploads} uploads (last: ${new Date(b.last_upload).toLocaleTimeString()})</span>
+          </div>`
+        ).join('');
+      document.getElementById('boothStats').innerHTML = statsHtml;
+    }
+  } catch {
+    document.getElementById('boothUploadUrl').textContent = 'Server offline';
+  }
+}
+
+function toggleApiKey() {
+  boothApiKeyVisible = !boothApiKeyVisible;
+  document.getElementById('boothApiKeyDisplay').textContent = boothApiKeyVisible ? 'sharehub-booth-2026' : '***';
+}
+
 loadStatus();
+loadBoothInfo();
 setInterval(loadStatus, 30000);
+setInterval(loadBoothInfo, 30000);
 </script>
 </body>
 </html>

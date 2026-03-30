@@ -182,6 +182,37 @@ function initializeSchema(db: Database.Database): void {
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
+    -- ═══ Booth Intake Tables ═══
+
+    -- Booth upload dedup tracking
+    CREATE TABLE IF NOT EXISTS booth_uploads (
+      id TEXT PRIMARY KEY,
+      booth_id TEXT NOT NULL,
+      file_hash TEXT NOT NULL,
+      session_id TEXT,
+      uploaded_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(booth_id, file_hash)
+    );
+
+    -- Cloud sync retry queue
+    CREATE TABLE IF NOT EXISTS cloud_sync_queue (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      event_id TEXT,
+      photo_path TEXT,
+      clip_path TEXT,
+      qr_token TEXT,
+      series_id TEXT,
+      status TEXT DEFAULT 'pending',
+      retry_count INTEGER DEFAULT 0,
+      last_error TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      next_retry_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_booth_uploads_hash ON booth_uploads(booth_id, file_hash);
+    CREATE INDEX IF NOT EXISTS idx_cloud_sync_status ON cloud_sync_queue(status, next_retry_at);
+
     -- PhotoQRbag indexes
     CREATE INDEX IF NOT EXISTS idx_register_users_event ON register_users(event_id);
     CREATE INDEX IF NOT EXISTS idx_register_users_token ON register_users(personal_qr_token);
@@ -284,6 +315,15 @@ export function incrementDownloadCount(token: string) {
 
 export function markDeliveryCompleted(token: string) {
   getDatabase().prepare("UPDATE qr_deliveries SET completed_at = datetime('now') WHERE id = ?").run(token);
+}
+
+export function updateDeliveryCloudUrls(token: string, photoQrUrl: string, clipUrl?: string) {
+  getDatabase().prepare(`
+    UPDATE qr_deliveries
+    SET photo_qr_url = ?,
+        clip_url     = COALESCE(?, clip_url)
+    WHERE id = ?
+  `).run(photoQrUrl, clipUrl || null, token);
 }
 
 export function trackShare(token: string, platform: 'facebook' | 'line' | 'twitter' | 'native') {
@@ -468,4 +508,65 @@ export function saveBadgeConfig(eventId: string, config: Record<string, unknown>
     INSERT INTO badge_config (event_id, config_json, updated_at) VALUES (?, ?, datetime('now'))
     ON CONFLICT(event_id) DO UPDATE SET config_json = excluded.config_json, updated_at = datetime('now')
   `).run(eventId, JSON.stringify(config));
+}
+
+// ═══ Booth Intake Helpers ═══════════════════════════════════
+
+export function checkBoothDuplicate(boothId: string, fileHash: string): boolean {
+  const row = getDatabase().prepare(
+    `SELECT 1 FROM booth_uploads WHERE booth_id = ? AND file_hash = ? AND uploaded_at > datetime('now', '-5 minutes')`
+  ).get(boothId, fileHash);
+  return !!row;
+}
+
+export function recordBoothUpload(id: string, boothId: string, fileHash: string, sessionId: string) {
+  getDatabase().prepare(
+    `INSERT OR IGNORE INTO booth_uploads (id, booth_id, file_hash, session_id) VALUES (?, ?, ?, ?)`
+  ).run(id, boothId, fileHash, sessionId);
+}
+
+export function getBoothUploadStats() {
+  return getDatabase().prepare(`
+    SELECT booth_id, COUNT(*) as total_uploads,
+           MAX(uploaded_at) as last_upload
+    FROM booth_uploads
+    GROUP BY booth_id
+    ORDER BY last_upload DESC
+  `).all() as { booth_id: string; total_uploads: number; last_upload: string }[];
+}
+
+export function updateSessionStatus(sessionId: string, status: string) {
+  getDatabase().prepare('UPDATE sessions SET status = ? WHERE id = ?').run(status, sessionId);
+}
+
+// ═══ Cloud Sync Queue ═══════════════════════════════════════
+
+export function addToCloudSyncQueue(item: {
+  id: string; session_id: string; event_id?: string;
+  photo_path?: string; clip_path?: string; qr_token?: string; series_id?: string;
+}) {
+  getDatabase().prepare(`
+    INSERT OR IGNORE INTO cloud_sync_queue (id, session_id, event_id, photo_path, clip_path, qr_token, series_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(item.id, item.session_id, item.event_id || null, item.photo_path || null,
+    item.clip_path || null, item.qr_token || null, item.series_id || null);
+}
+
+export function getPendingCloudSync(limit = 10) {
+  return getDatabase().prepare(`
+    SELECT * FROM cloud_sync_queue
+    WHERE status IN ('pending', 'failed') AND next_retry_at <= datetime('now') AND retry_count < 5
+    ORDER BY created_at ASC LIMIT ?
+  `).all(limit) as any[];
+}
+
+export function markCloudSyncDone(id: string) {
+  getDatabase().prepare(`UPDATE cloud_sync_queue SET status = 'synced' WHERE id = ?`).run(id);
+}
+
+export function markCloudSyncFailed(id: string, error: string) {
+  getDatabase().prepare(`
+    UPDATE cloud_sync_queue SET status = 'failed', retry_count = retry_count + 1,
+    last_error = ?, next_retry_at = datetime('now', '+2 minutes') WHERE id = ?
+  `).run(error, id);
 }

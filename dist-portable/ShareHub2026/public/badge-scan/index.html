@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PhotoQRbag — Badge Scanner</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Inter','Segoe UI',sans-serif; background:#1a1a2e; color:white; min-height:100vh; }
+  .header { padding:16px; text-align:center; background:rgba(0,0,0,0.3); }
+  .header h1 { font-size:18px; font-weight:700; }
+  .header p { font-size:12px; color:#C9A24A; }
+
+  .scanner { position:relative; width:100%; max-width:400px; margin:12px auto; }
+  .scanner video { width:100%; border-radius:12px; }
+  .scanner canvas { display:none; }
+  .scan-overlay { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:200px; height:200px; border:3px solid #C9A24A; border-radius:12px; opacity:0.7; }
+
+  .badge-list { padding:12px 16px; max-height:40vh; overflow-y:auto; }
+  .badge-item { display:flex; align-items:center; gap:10px; background:rgba(255,255,255,0.08); padding:10px 14px; border-radius:10px; margin-bottom:8px; }
+  .badge-item .name { flex:1; font-size:14px; }
+  .badge-item .time { font-size:11px; color:#888; }
+  .badge-count { text-align:center; font-size:48px; font-weight:800; color:#C9A24A; margin:8px 0; }
+
+  .controls { padding:12px 16px; display:flex; gap:8px; }
+  .btn { flex:1; padding:14px; border:none; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer; }
+  .btn-gold { background:#C9A24A; color:white; }
+  .btn-red { background:#ef4444; color:white; }
+  .btn-green { background:#22c55e; color:white; }
+  .btn-outline { background:transparent; border:1.5px solid rgba(255,255,255,0.2); color:white; }
+
+  .status { text-align:center; padding:8px; font-size:13px; }
+  .status.locked { color:#22c55e; font-weight:700; }
+  .status.open { color:#C9A24A; }
+
+  .auth-screen { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; padding:24px; }
+  .auth-screen input { width:100%; max-width:300px; padding:14px; border:1.5px solid rgba(255,255,255,0.2); background:rgba(255,255,255,0.05); color:white; border-radius:10px; font-size:16px; text-align:center; margin:12px 0; }
+  .auth-screen input::placeholder { color:rgba(255,255,255,0.3); }
+
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#C9A24A; color:white; padding:10px 24px; border-radius:8px; font-size:13px; display:none; z-index:99; }
+  .toast.show { display:block; animation:fadeUp .3s; }
+  .toast.error { background:#ef4444; }
+  .toast.dup { background:#f59e0b; }
+  @keyframes fadeUp { from { opacity:0; transform:translateX(-50%) translateY(10px); } }
+</style>
+</head>
+<body>
+
+<!-- Auth Screen -->
+<div id="authScreen" class="auth-screen">
+  <h2>Badge Scanner</h2>
+  <p style="color:#888; font-size:13px; margin-top:8px;">Enter API key to continue</p>
+  <input type="password" id="apiKeyInput" placeholder="API Key">
+  <button class="btn btn-gold" style="max-width:300px; width:100%;" onclick="authenticate()">Enter</button>
+</div>
+
+<!-- Main Scanner -->
+<div id="mainScreen" style="display:none;">
+  <div class="header">
+    <h1>Badge Scanner</h1>
+    <p id="boothLabel">Booth: booth-1</p>
+  </div>
+
+  <div class="scanner">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+    <div class="scan-overlay"></div>
+  </div>
+
+  <div class="badge-count" id="badgeCount">0</div>
+  <div class="status open" id="batchStatus">Scanning...</div>
+
+  <div class="controls">
+    <button class="btn btn-green" id="btnLock" onclick="lockBatch()">Ready</button>
+    <button class="btn btn-outline" onclick="newBatch()">New Batch</button>
+  </div>
+
+  <div class="badge-list" id="badgeList"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script>
+const API = '';
+const params = new URLSearchParams(location.search);
+const boothId = params.get('boothId') || 'booth-1';
+let apiKey = localStorage.getItem('sharehub_apiKey') || '';
+let currentBatchId = null;
+let scannedBadges = [];
+let scanning = true;
+let video, canvas, ctx;
+
+// Auto-auth if key saved
+if (apiKey) authenticate(true);
+
+function authenticate(auto) {
+  if (!auto) apiKey = document.getElementById('apiKeyInput').value.trim();
+  if (!apiKey) return;
+
+  localStorage.setItem('sharehub_apiKey', apiKey);
+  document.getElementById('authScreen').style.display = 'none';
+  document.getElementById('mainScreen').style.display = 'block';
+  document.getElementById('boothLabel').textContent = 'Booth: ' + boothId;
+  initScanner();
+  newBatch();
+}
+
+async function initScanner() {
+  video = document.getElementById('video');
+  canvas = document.getElementById('canvas');
+  ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: 640, height: 480 } });
+    video.srcObject = stream;
+    video.addEventListener('loadeddata', () => { requestAnimationFrame(tick); });
+  } catch {
+    showToast('Camera not available', 'error');
+  }
+}
+
+function tick() {
+  if (!scanning || video.readyState !== video.HAVE_ENOUGH_DATA) {
+    requestAnimationFrame(tick);
+    return;
+  }
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.drawImage(video, 0, 0);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+  if (code && code.data) {
+    // Extract token from URL or plain text
+    let token = code.data;
+    try {
+      const url = new URL(token);
+      token = url.searchParams.get('token') || token;
+    } catch { /* plain token */ }
+
+    if (token && !scannedBadges.includes(token)) {
+      scanBadge(token);
+    }
+  }
+
+  requestAnimationFrame(tick);
+}
+
+async function newBatch() {
+  try {
+    const res = await apiFetch('/api/badge-scan/batch/new', 'POST', { boothId });
+    const data = await res.json();
+    if (data.success) {
+      currentBatchId = data.data.batchId;
+      scannedBadges = [];
+      renderBadges();
+      document.getElementById('batchStatus').textContent = 'Scanning...';
+      document.getElementById('batchStatus').className = 'status open';
+      document.getElementById('btnLock').disabled = false;
+      scanning = true;
+    }
+  } catch { showToast('Failed to create batch', 'error'); }
+}
+
+async function scanBadge(token) {
+  if (!currentBatchId) return;
+  scanning = false; // pause briefly
+
+  try {
+    const res = await apiFetch('/api/badge-scan/scan', 'POST', { batchId: currentBatchId, badgeToken: token, boothId });
+    const data = await res.json();
+
+    if (data.success) {
+      if (data.data.duplicate) {
+        showToast('Already scanned!', 'dup');
+      } else {
+        scannedBadges.push(token);
+        scannedBadges._names = scannedBadges._names || {};
+        scannedBadges._names[token] = data.data.userName;
+        renderBadges();
+        showToast(data.data.userName + ' added!');
+        // Vibrate + sound
+        if (navigator.vibrate) navigator.vibrate(100);
+      }
+    } else {
+      showToast(data.error || 'Scan failed', 'error');
+    }
+  } catch { showToast('Scan failed', 'error'); }
+
+  setTimeout(() => { scanning = true; }, 1500); // cooldown
+}
+
+async function lockBatch() {
+  if (!currentBatchId || scannedBadges.length === 0) return showToast('Scan badges first', 'error');
+
+  try {
+    await apiFetch('/api/badge-scan/batch/lock/' + currentBatchId, 'POST', {});
+    document.getElementById('batchStatus').textContent = 'LOCKED — Ready for capture!';
+    document.getElementById('batchStatus').className = 'status locked';
+    document.getElementById('btnLock').disabled = true;
+    showToast('Batch locked!');
+  } catch { showToast('Lock failed', 'error'); }
+}
+
+function renderBadges() {
+  const list = document.getElementById('badgeList');
+  document.getElementById('badgeCount').textContent = scannedBadges.length;
+
+  if (scannedBadges.length === 0) {
+    list.innerHTML = '<p style="text-align:center; color:#666; padding:24px; font-size:13px;">Scan badge QR codes to add guests</p>';
+    return;
+  }
+
+  list.innerHTML = scannedBadges.map((t, i) => {
+    const name = scannedBadges._names?.[t] || 'Guest';
+    return `<div class="badge-item">
+      <span style="color:#C9A24A; font-weight:700;">${i + 1}</span>
+      <span class="name">${name}</span>
+      <span class="time">${new Date().toLocaleTimeString()}</span>
+    </div>`;
+  }).join('');
+}
+
+function apiFetch(path, method, body) {
+  return fetch(API + path, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (type ? ' ' + type : '');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+renderBadges();
+</script>
+</body>
+</html>

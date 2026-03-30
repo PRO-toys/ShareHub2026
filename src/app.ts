@@ -11,6 +11,7 @@ import eventsRouter from './routes/events';
 import faceSearchRouter from './routes/face-search';
 import badgeRouter from './routes/badge';
 import badgeScanRouter from './routes/badge-scan';
+import boothIntakeRouter from './routes/booth-intake';
 
 const app = express();
 
@@ -36,6 +37,7 @@ app.use('/api/events', eventsRouter);
 app.use('/api/face', faceSearchRouter);
 app.use('/api/badge', badgeRouter);
 app.use('/api/badge-scan', badgeScanRouter);
+app.use('/api/booth', boothIntakeRouter);
 
 // ─── Photo/Clip preview (top-level for viewer compatibility) ──
 app.get('/api/photo-preview', (req, res) => {

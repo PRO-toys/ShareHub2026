@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { CONFIG } from '../config';
+import { updateDeliveryCloudUrls } from '../db/database';
 
 let admin: any = null;
 let bucket: any = null;
@@ -131,6 +132,11 @@ export async function syncToCloud(params: CloudSyncParams): Promise<{ photoUrl: 
 
     await firestore.collection('deliveries').doc(qrToken).set(deliveryDoc);
     console.log(`[Firebase] Synced session ${sessionId} → token ${qrToken}`);
+
+    // ── Write cloud URLs back to local DB so delivery route can serve them ──
+    if (photoUrl) {
+      updateDeliveryCloudUrls(qrToken, photoUrl, clipUrl);
+    }
 
     return { photoUrl, clipUrl };
   } catch (err: any) {

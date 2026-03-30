@@ -16,28 +16,48 @@ router.get('/page/:token', (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Delivery not found or expired' });
   }
 
+  const session = getSession(delivery.session_id);
+
+  // ─── Session status check: processing → wait ───
+  if (session?.status === 'processing') {
+    return res.status(202).json({
+      token,
+      status: 'processing',
+      message: 'Photos are being prepared. Please wait a moment.',
+      retryAfterMs: 2000,
+    });
+  }
+
   incrementDownloadCount(token);
 
-  const session = getSession(delivery.session_id);
   const localIp = getLocalIpAddress();
+
+  // Determine locationType based on what's available
+  const hasCloud = !!(delivery.photo_qr_url || delivery.download_url?.startsWith('https://'));
+  const hasLocal = !!(delivery.file_path && fs.existsSync(delivery.file_path));
+  const locationType = hasCloud && hasLocal ? 'hybrid' : hasCloud ? 'cloud' : 'local';
 
   // Build response with both local + cloud URLs
   const response: any = {
     token,
     sessionId: delivery.session_id,
     eventId: session?.event_id || null,
-    photoUrl: delivery.download_url,
+    status: session?.status || 'ready',
+    // Cloud URLs (for Firebase Hosting / offline-server access)
+    photoUrl: delivery.photo_qr_url || delivery.download_url,
+    photoQrUrl: delivery.photo_qr_url || null,
     clipUrl: delivery.clip_url || null,
+    // Metadata
     themeId: 'premium-white-gold',
-    locationType: 'hybrid',
+    locationType,
     localServerIp: localIp,
     localServerPort: CONFIG.PORT,
     createdAt: delivery.created_at,
     expiresAt: delivery.expires_at,
   };
 
-  // If photo exists locally, provide local URL too
-  if (delivery.file_path && fs.existsSync(delivery.file_path)) {
+  // Local URLs (LAN fast-path)
+  if (hasLocal) {
     response.localPhotoUrl = `/api/delivery/photo/${token}`;
   }
 

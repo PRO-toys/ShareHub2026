@@ -48,4 +48,14 @@ export const CONFIG = {
   SMTP_PORT: Number(process.env.SMTP_PORT) || 587,
   SMTP_USER: process.env.SMTP_USER || '',
   SMTP_PASS: process.env.SMTP_PASS || '',
+
+  // ─── Booth Intake Config ─────────────────────────────
+  /** Folder for API-uploaded files */
+  INTAKE_FOLDER: process.env.INTAKE_FOLDER || path.join(process.cwd(), 'storage', 'intake'),
+  /** API key for booth upload (separate from admin key) */
+  BOOTH_API_KEY: process.env.BOOTH_API_KEY || 'sharehub-booth-2026',
+  /** Comma-separated whitelist of allowed booth IDs (empty = allow all) */
+  ALLOWED_BOOTHS: process.env.ALLOWED_BOOTHS || '',
+  /** Max upload file size in MB */
+  MAX_UPLOAD_SIZE: Number(process.env.MAX_UPLOAD_SIZE) || 200,
 };
