@@ -261,6 +261,69 @@ router.post('/upload',
   },
 );
 
+// ─── POST /api/booth/upload-meta ──────────────────────────────
+// Webhook from 3ActsBooth: metadata only (files on shared disk)
+router.post('/upload-meta',
+  boothAuth,
+  async (req: Request, res: Response) => {
+    const {
+      sessionId, eventId, boothId,
+      renderedPhotoPath, photoQrPath, clipPath,
+      qrToken, seriesId, sessionCode,
+    } = req.body as {
+      sessionId: string; eventId: string; boothId?: string;
+      renderedPhotoPath?: string; photoQrPath?: string; clipPath?: string;
+      qrToken?: string; seriesId?: string; sessionCode?: string;
+    };
+
+    if (!sessionId || !eventId) {
+      return res.status(400).json({ error: 'sessionId and eventId are required' });
+    }
+
+    // Verify photo file exists on shared disk
+    if (renderedPhotoPath && !fs.existsSync(renderedPhotoPath)) {
+      console.warn(`[BoothMeta] Photo not found on disk: ${renderedPhotoPath}`);
+    }
+
+    const dbSessionId = `sh-meta-${nanoid(8)}`;
+    const sid = seriesId || `${boothId || 'booth'}/${sessionId}`;
+
+    upsertSession({
+      id: dbSessionId,
+      event_id: eventId,
+      series_id: sid,
+      session_code: sessionCode || sessionId.slice(-4),
+      rendered_image_path: renderedPhotoPath || '',
+      photo_qr_path: photoQrPath || undefined,
+      clip_path: clipPath || undefined,
+      act_count: 1,
+    });
+    updateSessionStatus(dbSessionId, 'ready');
+
+    // Badge auto-link
+    try {
+      const { linkPendingBadgesToSession } = require('../services/badge-delivery');
+      const linked = linkPendingBadgesToSession(dbSessionId, boothId);
+      if (linked > 0) console.log(`[BoothMeta] Badge: ${linked} users linked to ${dbSessionId}`);
+    } catch { /* badge service not critical */ }
+
+    // Face indexing
+    if (renderedPhotoPath && fs.existsSync(renderedPhotoPath)) {
+      indexFaceFromPhoto(renderedPhotoPath, dbSessionId, eventId)
+        .catch(() => { /* face service offline */ });
+    }
+
+    console.log(`[BoothMeta] Session: ${dbSessionId} | From: ${boothId || '?'} | Photo: ${renderedPhotoPath ? '✓' : '✗'}`);
+
+    res.status(201).json({
+      ok: true,
+      sessionId: dbSessionId,
+      seriesId: sid,
+      linked: true,
+    });
+  },
+);
+
 // ─── GET /api/booth/status ─────────────────────────────────
 router.get('/status', (req: Request, res: Response) => {
   const ip = getLocalIpAddress();

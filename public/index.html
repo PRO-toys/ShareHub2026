@@ -49,6 +49,9 @@
   .stat-num { font-size: 28px; font-weight: 700; color: #C9A24A; }
   .stat-label { font-size: 12px; color: #888; margin-top: 4px; }
 
+  .cfg-input { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+  .cfg-input:focus { outline: none; border-color: #C9A24A; }
+
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 12px 24px; border-radius: 8px; font-size: 14px; display: none; z-index: 100; }
   .toast.show { display: block; animation: fadeIn 0.3s; }
   @keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
@@ -159,10 +162,129 @@
     </div>
   </div>
 
+  <!-- PhotoQRbag Badge Config -->
+  <div class="card">
+    <h2>&#127915; PhotoQRbag Config</h2>
+    <p style="font-size:13px; color:#888; margin-bottom:16px;">ตั้งค่าระบบ Badge — LINE Login, Email OTP, API Key</p>
+
+    <div class="input-group">
+      <label>Event ID (ใช้เป็น scope แยก config ต่อ event)</label>
+      <div class="input-row">
+        <input type="text" id="cfgEventId" placeholder="event-001" value="default">
+        <button class="btn btn-outline" onclick="loadBadgeConfig()">Load</button>
+      </div>
+    </div>
+
+    <div id="badgeConfigForm" style="display:none;">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div class="input-group">
+          <label>LINE Channel ID</label>
+          <input type="text" id="cfgLineChannelId" class="cfg-input" placeholder="(optional)">
+        </div>
+        <div class="input-group">
+          <label>LINE Channel Secret</label>
+          <input type="password" id="cfgLineChannelSecret" class="cfg-input" placeholder="(optional)">
+        </div>
+        <div class="input-group">
+          <label>LINE Callback URL</label>
+          <input type="text" id="cfgLineCallbackUrl" class="cfg-input" placeholder="auto-detect">
+        </div>
+        <div class="input-group">
+          <label>LINE Messaging Token (Push)</label>
+          <input type="password" id="cfgLineMessagingToken" class="cfg-input" placeholder="(optional)">
+        </div>
+        <div class="input-group">
+          <label>SMTP Host</label>
+          <input type="text" id="cfgSmtpHost" class="cfg-input" placeholder="smtp.gmail.com">
+        </div>
+        <div class="input-group">
+          <label>SMTP Port</label>
+          <input type="number" id="cfgSmtpPort" class="cfg-input" placeholder="587">
+        </div>
+        <div class="input-group">
+          <label>SMTP User</label>
+          <input type="text" id="cfgSmtpUser" class="cfg-input" placeholder="your@gmail.com">
+        </div>
+        <div class="input-group">
+          <label>SMTP Password</label>
+          <input type="password" id="cfgSmtpPass" class="cfg-input" placeholder="app password">
+        </div>
+      </div>
+
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px;">
+          <input type="checkbox" id="cfgEnableLine"> LINE Login
+        </label>
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px;">
+          <input type="checkbox" id="cfgEnableEmail"> Email OTP
+        </label>
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px;">
+          <input type="checkbox" id="cfgEnableWalkIn" checked> Walk-in
+        </label>
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px;">
+          <input type="checkbox" id="cfgEnableLuckyDraw"> Lucky Draw
+        </label>
+      </div>
+
+      <div style="margin-top:16px; display:flex; gap:8px;">
+        <button class="btn btn-gold" onclick="saveBadgeConfig()">Save Config</button>
+        <button class="btn btn-outline" onclick="loadBadgeConfig()">Reset</button>
+      </div>
+      <div id="cfgStatus" style="font-size:12px; color:#888; margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <!-- Badge Stats + Lucky Draw -->
+  <div class="card">
+    <h2>&#127922; Badge Stats & Lucky Draw</h2>
+    <div id="badgeStatsSection">
+      <div class="stats" id="badgeStatsGrid" style="margin-bottom:16px;">
+        <div class="stat"><div class="stat-num" id="statBadgeTotal">0</div><div class="stat-label">Registered</div></div>
+        <div class="stat"><div class="stat-num" id="statBadgeCheckedIn">0</div><div class="stat-label">Checked In</div></div>
+        <div class="stat"><div class="stat-num" id="statBadgeDelivered">-</div><div class="stat-label">Photos Sent</div></div>
+      </div>
+
+      <div style="display:flex; gap:8px; font-size:12px; color:#666; margin-bottom:16px;" id="badgeMethodBreakdown"></div>
+
+      <!-- Lucky Draw -->
+      <div style="border-top:1px solid #f0f0f0; padding-top:16px;">
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
+          <h3 style="font-size:15px; margin:0;">Lucky Draw</h3>
+          <button class="btn btn-gold" onclick="runLuckyDraw()" style="padding:6px 16px; font-size:13px;">Draw!</button>
+        </div>
+        <div style="display:flex; gap:8px; margin-bottom:12px;">
+          <input type="text" id="ldRoundName" placeholder="Round name (optional)" style="flex:1; padding:8px 12px; border:1px solid #ddd; border-radius:8px; font-size:13px;">
+          <input type="text" id="ldPrizeName" placeholder="Prize name" style="flex:1; padding:8px 12px; border:1px solid #ddd; border-radius:8px; font-size:13px;">
+          <label style="display:flex; align-items:center; gap:4px; font-size:12px; white-space:nowrap;">
+            <input type="checkbox" id="ldExcludeWinners" checked> Exclude prev winners
+          </label>
+        </div>
+
+        <!-- Winner display -->
+        <div id="ldWinnerCard" style="display:none; padding:16px; background:linear-gradient(135deg,#fff8e1,#fff3e0); border-radius:10px; text-align:center;">
+          <div style="font-size:24px; margin-bottom:8px;">&#127881;</div>
+          <div style="font-size:18px; font-weight:700; color:#C9A24A;" id="ldWinnerName"></div>
+          <div style="font-size:13px; color:#888; margin-top:4px;" id="ldWinnerInfo"></div>
+        </div>
+
+        <!-- History -->
+        <div id="ldHistory" style="margin-top:12px;"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Quick Links -->
   <div class="card">
     <h2>&#128279; Pages</h2>
     <div class="links">
+      <a class="link-card" href="/register/" target="_blank">
+        <div class="link-icon" style="background:#fff8e1;">&#127915;</div>
+        <div><h3>Register</h3><p>Guest registration page</p></div>
+      </a>
+      <a class="link-card" href="/badge-scan/" target="_blank">
+        <div class="link-icon" style="background:#fce4ec;">&#128247;</div>
+        <div><h3>Badge Scan</h3><p>Operator QR scanner</p></div>
+      </a>
       <a class="link-card" href="/viewer/" target="_blank">
         <div class="link-icon" style="background:#e8f5e9;">&#128247;</div>
         <div><h3>Viewer (16:9)</h3><p>Photo gallery + search</p></div>
@@ -394,6 +516,130 @@ async function loadBoothInfo() {
 function toggleApiKey() {
   boothApiKeyVisible = !boothApiKeyVisible;
   document.getElementById('boothApiKeyDisplay').textContent = boothApiKeyVisible ? 'sharehub-booth-2026' : '***';
+}
+
+// ─── Badge Config ──────────────────────────────────────
+const API_KEY = 'sharehub-2026-key';
+const authHeaders = { 'x-api-key': API_KEY, 'Content-Type': 'application/json' };
+
+function getBadgeEventId() {
+  return document.getElementById('cfgEventId').value.trim() || 'default';
+}
+
+async function loadBadgeConfig() {
+  const eventId = getBadgeEventId();
+  document.getElementById('badgeConfigForm').style.display = 'block';
+  try {
+    const res = await fetch(API + `/api/badge/config/${eventId}`, { headers: authHeaders });
+    const { data } = await res.json();
+    document.getElementById('cfgLineChannelId').value = data.lineChannelId || '';
+    document.getElementById('cfgLineChannelSecret').value = data.lineChannelSecret || '';
+    document.getElementById('cfgLineCallbackUrl').value = data.lineCallbackUrl || '';
+    document.getElementById('cfgLineMessagingToken').value = data.lineMessagingToken || '';
+    document.getElementById('cfgSmtpHost').value = data.smtpHost || '';
+    document.getElementById('cfgSmtpPort').value = data.smtpPort || '';
+    document.getElementById('cfgSmtpUser').value = data.smtpUser || '';
+    document.getElementById('cfgSmtpPass').value = data.smtpPass || '';
+    document.getElementById('cfgEnableLine').checked = !!data.enableLine;
+    document.getElementById('cfgEnableEmail').checked = !!data.enableEmail;
+    document.getElementById('cfgEnableWalkIn').checked = data.enableWalkIn !== false;
+    document.getElementById('cfgEnableLuckyDraw').checked = !!data.enableLuckyDraw;
+    document.getElementById('cfgStatus').textContent = 'Loaded config for: ' + eventId;
+    document.getElementById('cfgStatus').style.color = '#22c55e';
+  } catch {
+    document.getElementById('cfgStatus').textContent = 'Failed to load config';
+    document.getElementById('cfgStatus').style.color = '#ef4444';
+  }
+  loadBadgeStats();
+  loadLuckyDrawHistory();
+}
+
+async function saveBadgeConfig() {
+  const eventId = getBadgeEventId();
+  const body = {
+    lineChannelId: document.getElementById('cfgLineChannelId').value,
+    lineChannelSecret: document.getElementById('cfgLineChannelSecret').value,
+    lineCallbackUrl: document.getElementById('cfgLineCallbackUrl').value,
+    lineMessagingToken: document.getElementById('cfgLineMessagingToken').value,
+    smtpHost: document.getElementById('cfgSmtpHost').value,
+    smtpPort: document.getElementById('cfgSmtpPort').value,
+    smtpUser: document.getElementById('cfgSmtpUser').value,
+    smtpPass: document.getElementById('cfgSmtpPass').value,
+    enableLine: document.getElementById('cfgEnableLine').checked,
+    enableEmail: document.getElementById('cfgEnableEmail').checked,
+    enableWalkIn: document.getElementById('cfgEnableWalkIn').checked,
+    enableLuckyDraw: document.getElementById('cfgEnableLuckyDraw').checked,
+  };
+  try {
+    await fetch(API + `/api/badge/config/${eventId}`, { method: 'PUT', headers: authHeaders, body: JSON.stringify(body) });
+    showToast('Badge config saved!');
+    document.getElementById('cfgStatus').textContent = 'Saved!';
+    document.getElementById('cfgStatus').style.color = '#22c55e';
+  } catch {
+    showToast('Failed to save');
+  }
+}
+
+// ─── Badge Stats ───────────────────────────────────────
+async function loadBadgeStats() {
+  const eventId = getBadgeEventId();
+  try {
+    const res = await fetch(API + `/api/badge/stats/${eventId}`, { headers: authHeaders });
+    const { data } = await res.json();
+    document.getElementById('statBadgeTotal').textContent = data.total || 0;
+    document.getElementById('statBadgeCheckedIn').textContent = data.checkedIn || 0;
+
+    const methods = (data.byMethod || []).map(m => `${m.method}: ${m.count}`).join(' | ');
+    document.getElementById('badgeMethodBreakdown').textContent = methods || 'No registrations';
+  } catch {}
+}
+
+// ─── Lucky Draw ────────────────────────────────────────
+async function runLuckyDraw() {
+  const eventId = getBadgeEventId();
+  const roundName = document.getElementById('ldRoundName').value.trim();
+  const prizeName = document.getElementById('ldPrizeName').value.trim();
+  const excludeWinners = document.getElementById('ldExcludeWinners').checked;
+
+  try {
+    const res = await fetch(API + `/api/badge/lucky-draw/${eventId}`, {
+      method: 'POST', headers: authHeaders,
+      body: JSON.stringify({ roundName, prizeName, excludeWinners }),
+    });
+    const { data } = await res.json();
+
+    const card = document.getElementById('ldWinnerCard');
+    if (data.winner) {
+      card.style.display = 'block';
+      document.getElementById('ldWinnerName').textContent = data.winner.name || 'Guest';
+      document.getElementById('ldWinnerInfo').textContent =
+        (data.winner.email || '') + (prizeName ? ' — ' + prizeName : '');
+      showToast('Winner: ' + (data.winner.name || 'Guest'));
+    } else {
+      card.style.display = 'none';
+      showToast(data.message || 'No eligible users');
+    }
+    loadLuckyDrawHistory();
+  } catch { showToast('Lucky draw failed'); }
+}
+
+async function loadLuckyDrawHistory() {
+  const eventId = getBadgeEventId();
+  try {
+    const res = await fetch(API + `/api/badge/lucky-draw/${eventId}`, { headers: authHeaders });
+    const { data } = await res.json();
+    const el = document.getElementById('ldHistory');
+    if (!data || data.length === 0) {
+      el.innerHTML = '<div style="font-size:12px; color:#999;">No draws yet</div>';
+      return;
+    }
+    el.innerHTML = data.map(r =>
+      `<div class="status-row">
+        <span class="status-label">${r.round_name || 'Draw'} — ${r.prize_name || ''}</span>
+        <span class="status-value">${r.name || r.line_display_name || '?'} <span style="font-size:11px; color:#888;">${new Date(r.drawn_at).toLocaleString()}</span></span>
+      </div>`
+    ).join('');
+  } catch {}
 }
 
 loadStatus();

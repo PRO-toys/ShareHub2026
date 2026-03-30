@@ -130,6 +130,16 @@ INTAKE_FOLDER=./storage/intake
 BOOTH_API_KEY=sharehub-booth-2026
 ALLOWED_BOOTHS=
 MAX_UPLOAD_SIZE=200
+
+# PhotoQRbag Badge System
+ADMIN_API_KEY=sharehub-2026-key
+BADGE_LINE_CHANNEL_ID=
+BADGE_LINE_CHANNEL_SECRET=
+LINE_MESSAGING_TOKEN=
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
 `);
 console.log('   ✓ .env + .env.example');
 
